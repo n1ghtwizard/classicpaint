@@ -941,7 +941,7 @@ export const PaintApp = () => {
           )}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo && !activeShape} aria-label="Undo">
+              <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo && !activeShape && !selection} aria-label="Undo">
                 <Undo2 className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
