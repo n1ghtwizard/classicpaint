@@ -471,6 +471,24 @@ export const PaintApp = () => {
       clearPreview();
       return;
     }
+    if (selectionRef.current) {
+      // Drop the floating selection back at its origin first.
+      const sel = selectionRef.current;
+      const ctx = getCtx();
+      if (ctx) {
+        const tmp = document.createElement("canvas");
+        tmp.width = sel.imageData.width;
+        tmp.height = sel.imageData.height;
+        const tctx = tmp.getContext("2d");
+        if (tctx) {
+          tctx.putImageData(sel.imageData, 0, 0);
+          ctx.drawImage(tmp, sel.originX, sel.originY, sel.w, sel.h);
+        }
+      }
+      setSelection(null);
+      clearPreview();
+      return;
+    }
     if (historyIndexRef.current <= 0) return;
     historyIndexRef.current -= 1;
     restoreFromHistory();
