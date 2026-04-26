@@ -454,6 +454,58 @@ function arrow(direction: "right" | "left" | "up" | "down"): Path2D {
   return p;
 }
 
+function diagonalArrow(kind: "arrow-ne" | "arrow-se" | "arrow-sw" | "arrow-nw"): Path2D {
+  // Build a NE arrow inside the unit box, then mirror as needed.
+  // Shaft from bottom-left to roughly (0.7, 0.3); arrowhead at top-right.
+  const p = new Path2D();
+  // NE base polygon points
+  const pts: [number, number][] = [
+    [0, 0.7], [0.5, 0.2], [0.35, 0.05], [0.95, 0.05],
+    [0.95, 0.65], [0.8, 0.5], [0.3, 1],
+  ];
+  const transform = (x: number, y: number): [number, number] => {
+    switch (kind) {
+      case "arrow-ne": return [x, y];
+      case "arrow-nw": return [1 - x, y];
+      case "arrow-se": return [x, 1 - y];
+      case "arrow-sw": return [1 - x, 1 - y];
+    }
+  };
+  pts.forEach(([x, y], i) => {
+    const [tx, ty] = transform(x, y);
+    if (i === 0) p.moveTo(tx, ty);
+    else p.lineTo(tx, ty);
+  });
+  p.closePath();
+  return p;
+}
+
+function doubleArrow(orientation: "horizontal" | "vertical"): Path2D {
+  // Horizontal: arrowheads on both left and right.
+  const p = new Path2D();
+  const pts: [number, number][] = [
+    [0, 0.5],
+    [0.15, 0.2],
+    [0.15, 0.38],
+    [0.85, 0.38],
+    [0.85, 0.2],
+    [1, 0.5],
+    [0.85, 0.8],
+    [0.85, 0.62],
+    [0.15, 0.62],
+    [0.15, 0.8],
+  ];
+  const transform = (x: number, y: number): [number, number] =>
+    orientation === "horizontal" ? [x, y] : [y, x];
+  pts.forEach(([x, y], i) => {
+    const [tx, ty] = transform(x, y);
+    if (i === 0) p.moveTo(tx, ty);
+    else p.lineTo(tx, ty);
+  });
+  p.closePath();
+  return p;
+}
+
 // Render a shape onto a 2D context at its bbox/rotation.
 // startPoint and endPoint are only used for line shapes (which don't fit the
 // bounding-box model nicely when rotated).
