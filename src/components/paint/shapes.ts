@@ -14,9 +14,22 @@ import {
   ArrowLeft,
   ArrowUp,
   ArrowDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  ArrowDownLeft,
+  ArrowUpLeft,
   MessageSquare,
+  MessageCircle,
   Diamond,
   Zap,
+  Plus,
+  Shapes,
+  Flag,
+  Moon,
+  Sun,
+  PieChart,
+  Equal,
+  CornerUpRight,
 } from "lucide-react";
 
 export type ShapeKind =
@@ -28,6 +41,8 @@ export type ShapeKind =
   | "triangle"
   | "right-triangle"
   | "diamond"
+  | "parallelogram"
+  | "trapezoid"
   | "pentagon"
   | "hexagon"
   | "octagon"
@@ -38,10 +53,24 @@ export type ShapeKind =
   | "arrow-left"
   | "arrow-up"
   | "arrow-down"
+  | "arrow-ne"
+  | "arrow-se"
+  | "arrow-sw"
+  | "arrow-nw"
+  | "double-arrow-h"
+  | "double-arrow-v"
   | "callout"
+  | "thought-bubble"
   | "heart"
   | "lightning"
-  | "cloud";
+  | "cloud"
+  | "moon"
+  | "sun"
+  | "cross"
+  | "pie"
+  | "chord"
+  | "banner"
+  | "chevron";
 
 export interface ShapeMeta {
   id: ShapeKind;
@@ -58,6 +87,8 @@ export const SHAPES: ShapeMeta[] = [
   { id: "triangle", label: "Triangle", icon: Triangle },
   { id: "right-triangle", label: "Right triangle", icon: Triangle },
   { id: "diamond", label: "Diamond", icon: Diamond },
+  { id: "parallelogram", label: "Parallelogram", icon: Equal },
+  { id: "trapezoid", label: "Trapezoid", icon: Shapes },
   { id: "pentagon", label: "Pentagon", icon: Pentagon },
   { id: "hexagon", label: "Hexagon", icon: Hexagon },
   { id: "octagon", label: "Octagon", icon: Octagon },
@@ -68,10 +99,24 @@ export const SHAPES: ShapeMeta[] = [
   { id: "arrow-left", label: "Left arrow", icon: ArrowLeft },
   { id: "arrow-up", label: "Up arrow", icon: ArrowUp },
   { id: "arrow-down", label: "Down arrow", icon: ArrowDown },
+  { id: "arrow-ne", label: "Up-right arrow", icon: ArrowUpRight },
+  { id: "arrow-se", label: "Down-right arrow", icon: ArrowDownRight },
+  { id: "arrow-sw", label: "Down-left arrow", icon: ArrowDownLeft },
+  { id: "arrow-nw", label: "Up-left arrow", icon: ArrowUpLeft },
+  { id: "double-arrow-h", label: "Double arrow (horizontal)", icon: ArrowRight },
+  { id: "double-arrow-v", label: "Double arrow (vertical)", icon: ArrowUp },
+  { id: "chevron", label: "Chevron", icon: CornerUpRight },
   { id: "callout", label: "Callout", icon: MessageSquare },
+  { id: "thought-bubble", label: "Thought bubble", icon: MessageCircle },
   { id: "heart", label: "Heart", icon: Heart },
   { id: "lightning", label: "Lightning", icon: Zap },
   { id: "cloud", label: "Cloud", icon: Cloud },
+  { id: "moon", label: "Moon", icon: Moon },
+  { id: "sun", label: "Sun", icon: Sun },
+  { id: "cross", label: "Cross", icon: Plus },
+  { id: "pie", label: "Pie", icon: PieChart },
+  { id: "chord", label: "Chord", icon: PieChart },
+  { id: "banner", label: "Banner", icon: Flag },
 ];
 
 export const SHAPE_LOOKUP: Record<ShapeKind, ShapeMeta> = SHAPES.reduce(
@@ -205,6 +250,145 @@ const unitPath = (kind: ShapeKind): Path2D | null => {
       p.closePath();
       return p;
     }
+    case "parallelogram": {
+      const skew = 0.25;
+      p.moveTo(skew, 0);
+      p.lineTo(1, 0);
+      p.lineTo(1 - skew, 1);
+      p.lineTo(0, 1);
+      p.closePath();
+      return p;
+    }
+    case "trapezoid": {
+      const inset = 0.2;
+      p.moveTo(inset, 0);
+      p.lineTo(1 - inset, 0);
+      p.lineTo(1, 1);
+      p.lineTo(0, 1);
+      p.closePath();
+      return p;
+    }
+    case "arrow-ne":
+    case "arrow-se":
+    case "arrow-sw":
+    case "arrow-nw":
+      return diagonalArrow(kind);
+    case "double-arrow-h":
+      return doubleArrow("horizontal");
+    case "double-arrow-v":
+      return doubleArrow("vertical");
+    case "chevron": {
+      // Right-pointing chevron / block arrow segment.
+      p.moveTo(0, 0);
+      p.lineTo(0.6, 0);
+      p.lineTo(1, 0.5);
+      p.lineTo(0.6, 1);
+      p.lineTo(0, 1);
+      p.lineTo(0.4, 0.5);
+      p.closePath();
+      return p;
+    }
+    case "thought-bubble": {
+      // Main rounded body
+      p.ellipse(0.5, 0.42, 0.45, 0.32, 0, 0, Math.PI * 2);
+      // Two small bubbles in the bottom-left tail
+      p.moveTo(0.28, 0.85);
+      p.ellipse(0.22, 0.82, 0.08, 0.06, 0, 0, Math.PI * 2);
+      p.moveTo(0.16, 0.98);
+      p.ellipse(0.12, 0.96, 0.045, 0.035, 0, 0, Math.PI * 2);
+      return p;
+    }
+    case "moon": {
+      // Crescent: outer arc minus inner arc
+      p.arc(0.4, 0.5, 0.45, Math.PI * 0.5, Math.PI * 1.5, false);
+      p.arc(0.55, 0.5, 0.4, Math.PI * 1.5, Math.PI * 0.5, true);
+      p.closePath();
+      return p;
+    }
+    case "sun": {
+      // Center disk + 8 triangular rays
+      const cx = 0.5, cy = 0.5;
+      const rIn = 0.22;
+      const rOut = 0.5;
+      const rays = 12;
+      for (let i = 0; i < rays; i++) {
+        const a1 = (i / rays) * Math.PI * 2;
+        const a2 = ((i + 0.5) / rays) * Math.PI * 2;
+        const a3 = ((i + 1) / rays) * Math.PI * 2;
+        const x1 = cx + Math.cos(a1) * rIn;
+        const y1 = cy + Math.sin(a1) * rIn;
+        const x2 = cx + Math.cos(a2) * rOut;
+        const y2 = cy + Math.sin(a2) * rOut;
+        const x3 = cx + Math.cos(a3) * rIn;
+        const y3 = cy + Math.sin(a3) * rIn;
+        if (i === 0) p.moveTo(x1, y1);
+        else p.lineTo(x1, y1);
+        p.lineTo(x2, y2);
+        p.lineTo(x3, y3);
+      }
+      p.closePath();
+      // Inner disk
+      p.moveTo(cx + rIn * 0.6, cy);
+      p.arc(cx, cy, rIn * 0.6, 0, Math.PI * 2);
+      return p;
+    }
+    case "cross": {
+      // Plus / Greek cross
+      const t = 0.32; // arm thickness ratio
+      const a = (1 - t) / 2;
+      const b = a + t;
+      p.moveTo(a, 0);
+      p.lineTo(b, 0);
+      p.lineTo(b, a);
+      p.lineTo(1, a);
+      p.lineTo(1, b);
+      p.lineTo(b, b);
+      p.lineTo(b, 1);
+      p.lineTo(a, 1);
+      p.lineTo(a, b);
+      p.lineTo(0, b);
+      p.lineTo(0, a);
+      p.lineTo(a, a);
+      p.closePath();
+      return p;
+    }
+    case "pie": {
+      // 3/4 pie wedge
+      p.moveTo(0.5, 0.5);
+      p.lineTo(1, 0.5);
+      p.arc(0.5, 0.5, 0.5, 0, Math.PI * 1.5, false);
+      p.closePath();
+      return p;
+    }
+    case "chord": {
+      // Circular arc closed with a straight chord
+      p.moveTo(1, 0.5);
+      p.arc(0.5, 0.5, 0.5, 0, Math.PI * 1.25, false);
+      p.closePath();
+      return p;
+    }
+    case "banner": {
+      // Ribbon banner with notched ends
+      const top = 0.25;
+      const bot = 0.75;
+      const notch = 0.08;
+      p.moveTo(0, top);
+      p.lineTo(0.15, top);
+      p.lineTo(0.15, top - 0.1);
+      p.lineTo(0.85, top - 0.1);
+      p.lineTo(0.85, top);
+      p.lineTo(1, top);
+      p.lineTo(1 - notch, 0.5);
+      p.lineTo(1, bot);
+      p.lineTo(0.85, bot);
+      p.lineTo(0.85, bot + 0.1);
+      p.lineTo(0.15, bot + 0.1);
+      p.lineTo(0.15, bot);
+      p.lineTo(0, bot);
+      p.lineTo(notch, 0.5);
+      p.closePath();
+      return p;
+    }
     case "line":
     case "diagonal-line":
       // Lines are handled separately because they don't fit the unit-box model.
@@ -261,6 +445,58 @@ function arrow(direction: "right" | "left" | "up" | "down"): Path2D {
       case "up": return [y, 1 - x];
     }
   };
+  pts.forEach(([x, y], i) => {
+    const [tx, ty] = transform(x, y);
+    if (i === 0) p.moveTo(tx, ty);
+    else p.lineTo(tx, ty);
+  });
+  p.closePath();
+  return p;
+}
+
+function diagonalArrow(kind: "arrow-ne" | "arrow-se" | "arrow-sw" | "arrow-nw"): Path2D {
+  // Build a NE arrow inside the unit box, then mirror as needed.
+  // Shaft from bottom-left to roughly (0.7, 0.3); arrowhead at top-right.
+  const p = new Path2D();
+  // NE base polygon points
+  const pts: [number, number][] = [
+    [0, 0.7], [0.5, 0.2], [0.35, 0.05], [0.95, 0.05],
+    [0.95, 0.65], [0.8, 0.5], [0.3, 1],
+  ];
+  const transform = (x: number, y: number): [number, number] => {
+    switch (kind) {
+      case "arrow-ne": return [x, y];
+      case "arrow-nw": return [1 - x, y];
+      case "arrow-se": return [x, 1 - y];
+      case "arrow-sw": return [1 - x, 1 - y];
+    }
+  };
+  pts.forEach(([x, y], i) => {
+    const [tx, ty] = transform(x, y);
+    if (i === 0) p.moveTo(tx, ty);
+    else p.lineTo(tx, ty);
+  });
+  p.closePath();
+  return p;
+}
+
+function doubleArrow(orientation: "horizontal" | "vertical"): Path2D {
+  // Horizontal: arrowheads on both left and right.
+  const p = new Path2D();
+  const pts: [number, number][] = [
+    [0, 0.5],
+    [0.15, 0.2],
+    [0.15, 0.38],
+    [0.85, 0.38],
+    [0.85, 0.2],
+    [1, 0.5],
+    [0.85, 0.8],
+    [0.85, 0.62],
+    [0.15, 0.62],
+    [0.15, 0.8],
+  ];
+  const transform = (x: number, y: number): [number, number] =>
+    orientation === "horizontal" ? [x, y] : [y, x];
   pts.forEach(([x, y], i) => {
     const [tx, ty] = transform(x, y);
     if (i === 0) p.moveTo(tx, ty);

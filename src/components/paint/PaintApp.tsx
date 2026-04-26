@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Sun,
   Moon,
+  MousePointer2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
@@ -48,9 +49,10 @@ import {
 
 import { SHAPES, SHAPE_LOOKUP, renderShape, type DrawnShape, type ShapeKind } from "./shapes";
 import { ShapeTransformer } from "./ShapeTransformer";
+import { SelectionLayer, type FloatingSelection } from "./SelectionLayer";
 import { useTheme } from "./useTheme";
 
-type Tool = "pencil" | "brush" | "eraser" | "fill" | "picker" | "shape" | "text";
+type Tool = "select" | "pencil" | "brush" | "eraser" | "fill" | "picker" | "shape" | "text";
 
 const PRESET_COLORS = [
   "#000000", "#7f7f7f", "#880015", "#ed1c24", "#ff7f27", "#fff200",
@@ -85,6 +87,7 @@ interface ToolBtn {
 }
 
 const TOOLS: ToolBtn[] = [
+  { id: "select", icon: MousePointer2, label: "Select", shortcut: "V" },
   { id: "pencil", icon: Pencil, label: "Pencil", shortcut: "P" },
   { id: "brush", icon: Brush, label: "Brush", shortcut: "B" },
   { id: "eraser", icon: Eraser, label: "Eraser", shortcut: "E" },
@@ -159,6 +162,15 @@ export const PaintApp = () => {
   const activeShapeRef = useRef<DrawnShape | null>(null);
   activeShapeRef.current = activeShape;
 
+  // Lifted selection (a region of pixels detached from the canvas, draggable).
+  const [selection, setSelection] = useState<FloatingSelection | null>(null);
+  const selectionRef = useRef<FloatingSelection | null>(null);
+  selectionRef.current = selection;
+
+  // In-progress marquee while the user drags out a selection rectangle.
+  const marqueeRef = useRef<{ startX: number; startY: number } | null>(null);
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+
   const { theme, toggle: toggleTheme } = useTheme();
 
   const toolRef = useRef(tool);
@@ -183,6 +195,26 @@ export const PaintApp = () => {
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   }, []);
 
+  // Draw the lifted selection bitmap onto the preview canvas at its current
+  // floating position. Called on every selection change.
+  const renderSelectionToPreview = useCallback((sel: FloatingSelection) => {
+    const ctx = getPreviewCtx();
+    if (!ctx) return;
+    const ratio = window.devicePixelRatio || 1;
+    // We need to draw the ImageData (in physical pixels) at a CSS-pixel
+    // location. Use a temp canvas to convert, then drawImage with scaling.
+    const tmp = document.createElement("canvas");
+    tmp.width = sel.imageData.width;
+    tmp.height = sel.imageData.height;
+    const tctx = tmp.getContext("2d");
+    if (!tctx) return;
+    tctx.putImageData(sel.imageData, 0, 0);
+    ctx.save();
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.drawImage(tmp, sel.x, sel.y, sel.w, sel.h);
+    ctx.restore();
+  }, []);
+
   const renderActiveShapeToPreview = useCallback(() => {
     const ctx = getPreviewCtx();
     const shape = activeShapeRef.current;
@@ -191,10 +223,13 @@ export const PaintApp = () => {
     renderShape(ctx, shape);
   }, [clearPreview]);
 
-  // Re-render the preview whenever the active shape changes.
+  // Re-render the preview whenever the active shape or selection changes.
   useEffect(() => {
-    renderActiveShapeToPreview();
-  }, [activeShape, renderActiveShapeToPreview]);
+    clearPreview();
+    if (activeShape) renderShape(getPreviewCtx()!, activeShape);
+    if (selection) renderSelectionToPreview(selection);
+    // marquee is drawn separately via overlay div
+  }, [activeShape, selection, clearPreview, renderSelectionToPreview]);
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -281,6 +316,54 @@ export const PaintApp = () => {
     pushHistory();
   }, [clearPreview]);
 
+  // Stamp the floating selection back onto the main canvas at its current
+  // position, then clear the floating layer.
+  const commitSelection = useCallback(() => {
+    const sel = selectionRef.current;
+    const ctx = getCtx();
+    if (!sel || !ctx) {
+      setSelection(null);
+      return;
+    }
+    const tmp = document.createElement("canvas");
+    tmp.width = sel.imageData.width;
+    tmp.height = sel.imageData.height;
+    const tctx = tmp.getContext("2d");
+    if (tctx) {
+      tctx.putImageData(sel.imageData, 0, 0);
+      ctx.drawImage(tmp, sel.x, sel.y, sel.w, sel.h);
+    }
+    setSelection(null);
+    clearPreview();
+    pushHistory();
+  }, [clearPreview]);
+
+  // Place a default-sized shape in the center of the visible canvas, ready
+  // for the user to drag/resize via the transformer overlay.
+  const placeShapeAtCenter = useCallback((kind: ShapeKind) => {
+    if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ratio = window.devicePixelRatio || 1;
+    const cssW = canvas.width / ratio;
+    const cssH = canvas.height / ratio;
+    const isLine = kind === "line" || kind === "diagonal-line";
+    const w = Math.min(240, cssW * 0.4);
+    const h = isLine ? w : Math.min(180, cssH * 0.35);
+    setActiveShape({
+      kind,
+      x: (cssW - w) / 2,
+      y: (cssH - h) / 2,
+      w,
+      h,
+      rotation: 0,
+      color: colorRef.current,
+      strokeWidth: sizeRef.current,
+      fill: null,
+    });
+  }, [commitActiveShape, commitSelection]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -301,19 +384,36 @@ export const PaintApp = () => {
       if (e.key === "Escape") {
         if (textEditor) setTextEditor(null);
         if (activeShapeRef.current) {
-          // Cancel pending shape without committing.
           setActiveShape(null);
+          clearPreview();
+        }
+        if (selectionRef.current) {
+          // Restore the lifted region back to its origin.
+          const sel = selectionRef.current;
+          const ctx = getCtx();
+          if (ctx) {
+            const tmp = document.createElement("canvas");
+            tmp.width = sel.imageData.width;
+            tmp.height = sel.imageData.height;
+            const tctx = tmp.getContext("2d");
+            if (tctx) {
+              tctx.putImageData(sel.imageData, 0, 0);
+              ctx.drawImage(tmp, sel.originX, sel.originY, sel.w, sel.h);
+            }
+          }
+          setSelection(null);
           clearPreview();
         }
         return;
       }
       const map: Record<string, Tool> = {
-        p: "pencil", b: "brush", e: "eraser", f: "fill", i: "picker", t: "text",
+        v: "select", p: "pencil", b: "brush", e: "eraser", f: "fill", i: "picker", t: "text",
       };
       const t = map[e.key.toLowerCase()];
       if (t && !e.ctrlKey && !e.metaKey) {
-        // Switching tools commits any pending shape.
+        // Switching tools commits any pending shape/selection.
         if (activeShapeRef.current) commitActiveShape();
+        if (selectionRef.current) commitSelection();
         setTool(t);
       }
       if (e.key.toLowerCase() === "s" && !e.ctrlKey && !e.metaKey) {
@@ -323,7 +423,7 @@ export const PaintApp = () => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textEditor, commitActiveShape, clearPreview]);
+  }, [textEditor, commitActiveShape, commitSelection, clearPreview]);
 
   useEffect(() => {
     if (textEditor) {
@@ -368,6 +468,24 @@ export const PaintApp = () => {
     if (activeShapeRef.current) {
       // Cancel the in-progress shape rather than walking history.
       setActiveShape(null);
+      clearPreview();
+      return;
+    }
+    if (selectionRef.current) {
+      // Drop the floating selection back at its origin first.
+      const sel = selectionRef.current;
+      const ctx = getCtx();
+      if (ctx) {
+        const tmp = document.createElement("canvas");
+        tmp.width = sel.imageData.width;
+        tmp.height = sel.imageData.height;
+        const tctx = tmp.getContext("2d");
+        if (tctx) {
+          tctx.putImageData(sel.imageData, 0, 0);
+          ctx.drawImage(tmp, sel.originX, sel.originY, sel.w, sel.h);
+        }
+      }
+      setSelection(null);
       clearPreview();
       return;
     }
@@ -511,15 +629,67 @@ export const PaintApp = () => {
     setTextEditor(null);
   };
 
+  // Lift the pixels under the marquee into a floating selection.
+  const liftSelection = useCallback((rect: { x: number; y: number; w: number; h: number }) => {
+    const canvas = canvasRef.current;
+    const ctx = getCtx();
+    if (!canvas || !ctx) return;
+    const ratio = window.devicePixelRatio || 1;
+    const px = Math.max(0, Math.floor(rect.x * ratio));
+    const py = Math.max(0, Math.floor(rect.y * ratio));
+    const pw = Math.min(canvas.width - px, Math.floor(rect.w * ratio));
+    const ph = Math.min(canvas.height - py, Math.floor(rect.h * ratio));
+    if (pw <= 0 || ph <= 0) return;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const data = ctx.getImageData(px, py, pw, ph);
+    // Knock the lifted region out of the canvas with white.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(px, py, pw, ph);
+    ctx.restore();
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+    setSelection({
+      originX: px / ratio,
+      originY: py / ratio,
+      x: px / ratio,
+      y: py / ratio,
+      w: pw / ratio,
+      h: ph / ratio,
+      imageData: data,
+    });
+    pushHistory();
+  }, []);
+
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
     const pos = getPos(e);
 
-    // Clicking the canvas while a shape is being transformed commits it.
-    if (activeShapeRef.current) {
-      commitActiveShape();
+    // Selection tool: clicking outside an existing floating selection commits
+    // it and starts a new marquee.
+    if (tool === "select") {
+      if (selectionRef.current) {
+        const sel = selectionRef.current;
+        const inside =
+          pos.x >= sel.x && pos.x <= sel.x + sel.w &&
+          pos.y >= sel.y && pos.y <= sel.y + sel.h;
+        if (inside) {
+          // Drag handled by the SelectionLayer overlay — let it through.
+          return;
+        }
+        commitSelection();
+      }
+      drawingRef.current = true;
+      marqueeRef.current = { startX: pos.x, startY: pos.y };
+      setMarquee({ x: pos.x, y: pos.y, w: 0, h: 0 });
+      return;
     }
+
+    // Any other tool: bake any pending overlays first.
+    if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
     if (textEditor) commitText();
 
     if (tool === "fill") {
@@ -536,15 +706,17 @@ export const PaintApp = () => {
       return;
     }
     if (tool === "shape") {
-      drawingRef.current = true;
-      shapeStartRef.current = pos;
-      // Seed a tiny shape so the preview shows something immediately.
+      // Drop a default-sized shape centered on the click; user adjusts via the
+      // transformer overlay. No drag-to-draw — keeps the workflow predictable.
+      const isLine = shapeKind === "line" || shapeKind === "diagonal-line";
+      const w = 200;
+      const h = isLine ? 200 : 140;
       setActiveShape({
         kind: shapeKind,
-        x: pos.x,
-        y: pos.y,
-        w: 1,
-        h: 1,
+        x: pos.x - w / 2,
+        y: pos.y - h / 2,
+        w,
+        h,
         rotation: 0,
         color,
         strokeWidth: size,
@@ -572,20 +744,14 @@ export const PaintApp = () => {
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawingRef.current) return;
 
-    if (tool === "shape" && shapeStartRef.current) {
+    if (tool === "select" && marqueeRef.current) {
       const pos = getPos(e);
-      const start = shapeStartRef.current;
-      const x = Math.min(start.x, pos.x);
-      const y = Math.min(start.y, pos.y);
-      const w = Math.max(MIN_SHAPE_SIZE, Math.abs(pos.x - start.x));
-      const h = Math.max(MIN_SHAPE_SIZE, Math.abs(pos.y - start.y));
-      setActiveShape({
-        kind: shapeKind,
-        x, y, w, h,
-        rotation: 0,
-        color,
-        strokeWidth: size,
-        fill: null,
+      const start = marqueeRef.current;
+      setMarquee({
+        x: Math.min(start.startX, pos.x),
+        y: Math.min(start.startY, pos.y),
+        w: Math.abs(pos.x - start.startX),
+        h: Math.abs(pos.y - start.startY),
       });
       return;
     }
@@ -601,27 +767,14 @@ export const PaintApp = () => {
   const endStroke = (e?: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawingRef.current) return;
 
-    if (tool === "shape" && shapeStartRef.current) {
-      // Final size from the latest pointer position, then leave the shape
-      // editable — the transformer overlay shows up automatically.
-      if (e) {
-        const pos = getPos(e);
-        const start = shapeStartRef.current;
-        const x = Math.min(start.x, pos.x);
-        const y = Math.min(start.y, pos.y);
-        const w = Math.max(MIN_SHAPE_SIZE, Math.abs(pos.x - start.x));
-        const h = Math.max(MIN_SHAPE_SIZE, Math.abs(pos.y - start.y));
-        setActiveShape({
-          kind: shapeKind,
-          x, y, w, h,
-          rotation: 0,
-          color,
-          strokeWidth: size,
-          fill: null,
-        });
-      }
-      shapeStartRef.current = null;
+    if (tool === "select" && marqueeRef.current) {
+      const m = marquee;
+      marqueeRef.current = null;
+      setMarquee(null);
       drawingRef.current = false;
+      if (m && m.w > 4 && m.h > 4) {
+        liftSelection(m);
+      }
       return;
     }
 
@@ -642,6 +795,7 @@ export const PaintApp = () => {
     const ctx = getCtx();
     if (!canvas || !ctx) return;
     setActiveShape(null);
+    setSelection(null);
     clearPreview();
     const ratio = window.devicePixelRatio || 1;
     ctx.save();
@@ -654,8 +808,9 @@ export const PaintApp = () => {
   };
 
   const exportImage = (format: "png" | "jpg") => {
-    // Make sure pending shapes are baked in before exporting.
+    // Make sure pending overlays are baked in before exporting.
     if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const out = document.createElement("canvas");
@@ -786,7 +941,7 @@ export const PaintApp = () => {
           )}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo && !activeShape} aria-label="Undo">
+              <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo && !activeShape && !selection} aria-label="Undo">
                 <Undo2 className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
@@ -848,6 +1003,7 @@ export const PaintApp = () => {
                   <button
                     onClick={() => {
                       if (activeShapeRef.current) commitActiveShape();
+                      if (selectionRef.current) commitSelection();
                       setTool(t.id);
                     }}
                     className={cn(
@@ -877,6 +1033,7 @@ export const PaintApp = () => {
                   <button
                     onClick={() => {
                       if (activeShapeRef.current) commitActiveShape();
+                      if (selectionRef.current) commitSelection();
                       setTool("shape");
                     }}
                     className={cn(
@@ -910,10 +1067,12 @@ export const PaintApp = () => {
                       <TooltipTrigger asChild>
                         <button
                           onClick={() => {
-                            if (activeShapeRef.current) commitActiveShape();
                             setShapeKind(s.id);
                             setTool("shape");
                             setShapesMenuOpen(false);
+                            // Drag-and-drop UX: immediately place the shape on
+                            // the canvas, ready to be moved/resized.
+                            placeShapeAtCenter(s.id);
                           }}
                           className={cn(
                             "flex h-9 w-9 items-center justify-center rounded-md transition-colors",
@@ -1013,6 +1172,28 @@ export const PaintApp = () => {
               />
             )}
 
+            {/* Floating selection — draggable bounding box around lifted pixels */}
+            {selection && (
+              <SelectionLayer
+                selection={selection}
+                onChange={setSelection}
+                onCommit={commitSelection}
+              />
+            )}
+
+            {/* In-progress marquee rectangle (selection tool, while dragging) */}
+            {marquee && (
+              <div
+                className="pointer-events-none absolute z-20 border border-dashed border-tool-active/80 bg-tool-active/10"
+                style={{
+                  left: marquee.x,
+                  top: marquee.y,
+                  width: marquee.w,
+                  height: marquee.h,
+                }}
+              />
+            )}
+
             {textEditor && (
               <div
                 className="absolute z-10"
@@ -1100,6 +1281,16 @@ export const PaintApp = () => {
           {activeShape && (
             <span className="hidden md:inline">
               Drag handles to resize · top dot rotates · Enter to confirm · Esc to cancel
+            </span>
+          )}
+          {selection && !activeShape && (
+            <span className="hidden md:inline">
+              Drag the box to move · Enter to drop · Esc to cancel
+            </span>
+          )}
+          {tool === "select" && !selection && !activeShape && (
+            <span className="hidden md:inline">
+              Drag a rectangle to lift a region as a floating layer
             </span>
           )}
           <span>{tool === "shape" ? `Shape: ${currentShape.label}` : TOOLS.find((t) => t.id === tool)?.label}</span>
