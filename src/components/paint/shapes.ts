@@ -250,6 +250,145 @@ const unitPath = (kind: ShapeKind): Path2D | null => {
       p.closePath();
       return p;
     }
+    case "parallelogram": {
+      const skew = 0.25;
+      p.moveTo(skew, 0);
+      p.lineTo(1, 0);
+      p.lineTo(1 - skew, 1);
+      p.lineTo(0, 1);
+      p.closePath();
+      return p;
+    }
+    case "trapezoid": {
+      const inset = 0.2;
+      p.moveTo(inset, 0);
+      p.lineTo(1 - inset, 0);
+      p.lineTo(1, 1);
+      p.lineTo(0, 1);
+      p.closePath();
+      return p;
+    }
+    case "arrow-ne":
+    case "arrow-se":
+    case "arrow-sw":
+    case "arrow-nw":
+      return diagonalArrow(kind);
+    case "double-arrow-h":
+      return doubleArrow("horizontal");
+    case "double-arrow-v":
+      return doubleArrow("vertical");
+    case "chevron": {
+      // Right-pointing chevron / block arrow segment.
+      p.moveTo(0, 0);
+      p.lineTo(0.6, 0);
+      p.lineTo(1, 0.5);
+      p.lineTo(0.6, 1);
+      p.lineTo(0, 1);
+      p.lineTo(0.4, 0.5);
+      p.closePath();
+      return p;
+    }
+    case "thought-bubble": {
+      // Main rounded body
+      p.ellipse(0.5, 0.42, 0.45, 0.32, 0, 0, Math.PI * 2);
+      // Two small bubbles in the bottom-left tail
+      p.moveTo(0.28, 0.85);
+      p.ellipse(0.22, 0.82, 0.08, 0.06, 0, 0, Math.PI * 2);
+      p.moveTo(0.16, 0.98);
+      p.ellipse(0.12, 0.96, 0.045, 0.035, 0, 0, Math.PI * 2);
+      return p;
+    }
+    case "moon": {
+      // Crescent: outer arc minus inner arc
+      p.arc(0.4, 0.5, 0.45, Math.PI * 0.5, Math.PI * 1.5, false);
+      p.arc(0.55, 0.5, 0.4, Math.PI * 1.5, Math.PI * 0.5, true);
+      p.closePath();
+      return p;
+    }
+    case "sun": {
+      // Center disk + 8 triangular rays
+      const cx = 0.5, cy = 0.5;
+      const rIn = 0.22;
+      const rOut = 0.5;
+      const rays = 12;
+      for (let i = 0; i < rays; i++) {
+        const a1 = (i / rays) * Math.PI * 2;
+        const a2 = ((i + 0.5) / rays) * Math.PI * 2;
+        const a3 = ((i + 1) / rays) * Math.PI * 2;
+        const x1 = cx + Math.cos(a1) * rIn;
+        const y1 = cy + Math.sin(a1) * rIn;
+        const x2 = cx + Math.cos(a2) * rOut;
+        const y2 = cy + Math.sin(a2) * rOut;
+        const x3 = cx + Math.cos(a3) * rIn;
+        const y3 = cy + Math.sin(a3) * rIn;
+        if (i === 0) p.moveTo(x1, y1);
+        else p.lineTo(x1, y1);
+        p.lineTo(x2, y2);
+        p.lineTo(x3, y3);
+      }
+      p.closePath();
+      // Inner disk
+      p.moveTo(cx + rIn * 0.6, cy);
+      p.arc(cx, cy, rIn * 0.6, 0, Math.PI * 2);
+      return p;
+    }
+    case "cross": {
+      // Plus / Greek cross
+      const t = 0.32; // arm thickness ratio
+      const a = (1 - t) / 2;
+      const b = a + t;
+      p.moveTo(a, 0);
+      p.lineTo(b, 0);
+      p.lineTo(b, a);
+      p.lineTo(1, a);
+      p.lineTo(1, b);
+      p.lineTo(b, b);
+      p.lineTo(b, 1);
+      p.lineTo(a, 1);
+      p.lineTo(a, b);
+      p.lineTo(0, b);
+      p.lineTo(0, a);
+      p.lineTo(a, a);
+      p.closePath();
+      return p;
+    }
+    case "pie": {
+      // 3/4 pie wedge
+      p.moveTo(0.5, 0.5);
+      p.lineTo(1, 0.5);
+      p.arc(0.5, 0.5, 0.5, 0, Math.PI * 1.5, false);
+      p.closePath();
+      return p;
+    }
+    case "chord": {
+      // Circular arc closed with a straight chord
+      p.moveTo(1, 0.5);
+      p.arc(0.5, 0.5, 0.5, 0, Math.PI * 1.25, false);
+      p.closePath();
+      return p;
+    }
+    case "banner": {
+      // Ribbon banner with notched ends
+      const top = 0.25;
+      const bot = 0.75;
+      const notch = 0.08;
+      p.moveTo(0, top);
+      p.lineTo(0.15, top);
+      p.lineTo(0.15, top - 0.1);
+      p.lineTo(0.85, top - 0.1);
+      p.lineTo(0.85, top);
+      p.lineTo(1, top);
+      p.lineTo(1 - notch, 0.5);
+      p.lineTo(1, bot);
+      p.lineTo(0.85, bot);
+      p.lineTo(0.85, bot + 0.1);
+      p.lineTo(0.15, bot + 0.1);
+      p.lineTo(0.15, bot);
+      p.lineTo(0, bot);
+      p.lineTo(notch, 0.5);
+      p.closePath();
+      return p;
+    }
     case "line":
     case "diagonal-line":
       // Lines are handled separately because they don't fit the unit-box model.
