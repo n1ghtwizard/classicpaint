@@ -1154,6 +1154,28 @@ export const PaintApp = () => {
               />
             )}
 
+            {/* Floating selection — draggable bounding box around lifted pixels */}
+            {selection && (
+              <SelectionLayer
+                selection={selection}
+                onChange={setSelection}
+                onCommit={commitSelection}
+              />
+            )}
+
+            {/* In-progress marquee rectangle (selection tool, while dragging) */}
+            {marquee && (
+              <div
+                className="pointer-events-none absolute z-20 border border-dashed border-tool-active/80 bg-tool-active/10"
+                style={{
+                  left: marquee.x,
+                  top: marquee.y,
+                  width: marquee.w,
+                  height: marquee.h,
+                }}
+              />
+            )}
+
             {textEditor && (
               <div
                 className="absolute z-10"
