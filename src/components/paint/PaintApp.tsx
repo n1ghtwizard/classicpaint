@@ -311,7 +311,7 @@ export const PaintApp = () => {
         return;
       }
       const map: Record<string, Tool> = {
-        p: "pencil", b: "brush", e: "eraser", f: "fill", i: "picker", t: "text",
+        v: "select", p: "pencil", b: "brush", e: "eraser", f: "fill", i: "picker", t: "text",
       };
       const t = map[e.key.toLowerCase()];
       if (t && !e.ctrlKey && !e.metaKey) {
