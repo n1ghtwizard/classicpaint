@@ -983,6 +983,7 @@ export const PaintApp = () => {
                   <button
                     onClick={() => {
                       if (activeShapeRef.current) commitActiveShape();
+                      if (selectionRef.current) commitSelection();
                       setTool(t.id);
                     }}
                     className={cn(
