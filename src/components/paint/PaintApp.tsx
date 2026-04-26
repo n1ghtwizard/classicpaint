@@ -423,7 +423,7 @@ export const PaintApp = () => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textEditor, commitActiveShape, clearPreview]);
+  }, [textEditor, commitActiveShape, commitSelection, clearPreview]);
 
   useEffect(() => {
     if (textEditor) {
