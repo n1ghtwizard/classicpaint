@@ -777,6 +777,7 @@ export const PaintApp = () => {
     const ctx = getCtx();
     if (!canvas || !ctx) return;
     setActiveShape(null);
+    setSelection(null);
     clearPreview();
     const ratio = window.devicePixelRatio || 1;
     ctx.save();
@@ -789,8 +790,9 @@ export const PaintApp = () => {
   };
 
   const exportImage = (format: "png" | "jpg") => {
-    // Make sure pending shapes are baked in before exporting.
+    // Make sure pending overlays are baked in before exporting.
     if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const out = document.createElement("canvas");
