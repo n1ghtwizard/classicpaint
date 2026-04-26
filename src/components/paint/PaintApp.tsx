@@ -1265,6 +1265,16 @@ export const PaintApp = () => {
               Drag handles to resize · top dot rotates · Enter to confirm · Esc to cancel
             </span>
           )}
+          {selection && !activeShape && (
+            <span className="hidden md:inline">
+              Drag the box to move · Enter to drop · Esc to cancel
+            </span>
+          )}
+          {tool === "select" && !selection && !activeShape && (
+            <span className="hidden md:inline">
+              Drag a rectangle to lift a region as a floating layer
+            </span>
+          )}
           <span>{tool === "shape" ? `Shape: ${currentShape.label}` : TOOLS.find((t) => t.id === tool)?.label}</span>
         </div>
       </footer>
