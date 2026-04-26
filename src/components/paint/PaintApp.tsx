@@ -12,7 +12,6 @@ import {
   Type,
   Maximize2,
   ChevronDown,
-  Shapes,
   Sun,
   Moon,
 } from "lucide-react";
