@@ -316,6 +316,54 @@ export const PaintApp = () => {
     pushHistory();
   }, [clearPreview]);
 
+  // Stamp the floating selection back onto the main canvas at its current
+  // position, then clear the floating layer.
+  const commitSelection = useCallback(() => {
+    const sel = selectionRef.current;
+    const ctx = getCtx();
+    if (!sel || !ctx) {
+      setSelection(null);
+      return;
+    }
+    const tmp = document.createElement("canvas");
+    tmp.width = sel.imageData.width;
+    tmp.height = sel.imageData.height;
+    const tctx = tmp.getContext("2d");
+    if (tctx) {
+      tctx.putImageData(sel.imageData, 0, 0);
+      ctx.drawImage(tmp, sel.x, sel.y, sel.w, sel.h);
+    }
+    setSelection(null);
+    clearPreview();
+    pushHistory();
+  }, [clearPreview]);
+
+  // Place a default-sized shape in the center of the visible canvas, ready
+  // for the user to drag/resize via the transformer overlay.
+  const placeShapeAtCenter = useCallback((kind: ShapeKind) => {
+    if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ratio = window.devicePixelRatio || 1;
+    const cssW = canvas.width / ratio;
+    const cssH = canvas.height / ratio;
+    const isLine = kind === "line" || kind === "diagonal-line";
+    const w = Math.min(240, cssW * 0.4);
+    const h = isLine ? w : Math.min(180, cssH * 0.35);
+    setActiveShape({
+      kind,
+      x: (cssW - w) / 2,
+      y: (cssH - h) / 2,
+      w,
+      h,
+      rotation: 0,
+      color: colorRef.current,
+      strokeWidth: sizeRef.current,
+      fill: null,
+    });
+  }, [commitActiveShape, commitSelection]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -336,8 +384,24 @@ export const PaintApp = () => {
       if (e.key === "Escape") {
         if (textEditor) setTextEditor(null);
         if (activeShapeRef.current) {
-          // Cancel pending shape without committing.
           setActiveShape(null);
+          clearPreview();
+        }
+        if (selectionRef.current) {
+          // Restore the lifted region back to its origin.
+          const sel = selectionRef.current;
+          const ctx = getCtx();
+          if (ctx) {
+            const tmp = document.createElement("canvas");
+            tmp.width = sel.imageData.width;
+            tmp.height = sel.imageData.height;
+            const tctx = tmp.getContext("2d");
+            if (tctx) {
+              tctx.putImageData(sel.imageData, 0, 0);
+              ctx.drawImage(tmp, sel.originX, sel.originY, sel.w, sel.h);
+            }
+          }
+          setSelection(null);
           clearPreview();
         }
         return;
@@ -347,8 +411,9 @@ export const PaintApp = () => {
       };
       const t = map[e.key.toLowerCase()];
       if (t && !e.ctrlKey && !e.metaKey) {
-        // Switching tools commits any pending shape.
+        // Switching tools commits any pending shape/selection.
         if (activeShapeRef.current) commitActiveShape();
+        if (selectionRef.current) commitSelection();
         setTool(t);
       }
       if (e.key.toLowerCase() === "s" && !e.ctrlKey && !e.metaKey) {
