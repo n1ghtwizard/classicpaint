@@ -1,11 +1,45 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pencil, Brush, Eraser, PaintBucket, Pipette, Trash2, Download, Undo2, Redo2 } from "lucide-react";
+import {
+  Pencil,
+  Brush,
+  Eraser,
+  PaintBucket,
+  Pipette,
+  Trash2,
+  Download,
+  Undo2,
+  Redo2,
+  Square,
+  Circle,
+  Minus,
+  Triangle,
+  Type,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-type Tool = "pencil" | "brush" | "eraser" | "fill" | "picker";
+type Tool =
+  | "pencil"
+  | "brush"
+  | "eraser"
+  | "fill"
+  | "picker"
+  | "rectangle"
+  | "circle"
+  | "line"
+  | "triangle"
+  | "text";
+
+const SHAPE_TOOLS: Tool[] = ["rectangle", "circle", "line", "triangle"];
 
 const PRESET_COLORS = [
   "#000000", "#7f7f7f", "#880015", "#ed1c24", "#ff7f27", "#fff200",
@@ -13,6 +47,24 @@ const PRESET_COLORS = [
   "#b97a57", "#ffaec9", "#ffc90e", "#efe4b0", "#b5e61d", "#99d9ea",
   "#7092be", "#c8bfe7",
 ];
+
+const FONT_FAMILIES = [
+  "Inter, system-ui, sans-serif",
+  "Georgia, serif",
+  "'Times New Roman', Times, serif",
+  "'Courier New', monospace",
+  "'Comic Sans MS', cursive",
+  "Impact, sans-serif",
+];
+
+const FONT_LABELS: Record<string, string> = {
+  "Inter, system-ui, sans-serif": "Sans",
+  "Georgia, serif": "Georgia",
+  "'Times New Roman', Times, serif": "Times",
+  "'Courier New', monospace": "Mono",
+  "'Comic Sans MS', cursive": "Comic",
+  "Impact, sans-serif": "Impact",
+};
 
 interface ToolBtn {
   id: Tool;
@@ -27,15 +79,37 @@ const TOOLS: ToolBtn[] = [
   { id: "eraser", icon: Eraser, label: "Eraser", shortcut: "E" },
   { id: "fill", icon: PaintBucket, label: "Fill bucket", shortcut: "F" },
   { id: "picker", icon: Pipette, label: "Color picker", shortcut: "I" },
+  { id: "rectangle", icon: Square, label: "Rectangle", shortcut: "R" },
+  { id: "circle", icon: Circle, label: "Ellipse", shortcut: "O" },
+  { id: "line", icon: Minus, label: "Line", shortcut: "L" },
+  { id: "triangle", icon: Triangle, label: "Triangle", shortcut: "G" },
+  { id: "text", icon: Type, label: "Text", shortcut: "T" },
 ];
+
+interface Point {
+  x: number;
+  y: number;
+}
+
+interface TextEditor {
+  x: number;
+  y: number;
+  value: string;
+}
 
 export const PaintApp = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+
   const drawingRef = useRef(false);
-  const lastPointRef = useRef<{ x: number; y: number } | null>(null);
+  const lastPointRef = useRef<Point | null>(null);
+  const shapeStartRef = useRef<Point | null>(null);
+
   const historyRef = useRef<ImageData[]>([]);
   const historyIndexRef = useRef(-1);
+
+  const textInputRef = useRef<HTMLTextAreaElement>(null);
 
   const [tool, setTool] = useState<Tool>("pencil");
   const [color, setColor] = useState("#000000");
@@ -43,16 +117,30 @@ export const PaintApp = () => {
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
-  // Initialize canvas to fill its container, preserving content on resize.
+  const [fontSize, setFontSize] = useState(24);
+  const [fontFamily, setFontFamily] = useState(FONT_FAMILIES[0]);
+  const [textEditor, setTextEditor] = useState<TextEditor | null>(null);
+
+  // Keep latest tool/color/size in refs for stable handlers (not strictly required
+  // since handlers are inline, but useful for clarity).
+  const toolRef = useRef(tool);
+  toolRef.current = tool;
+
+  // Resize both canvases to match the container, preserving the main canvas content.
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
+    const preview = previewRef.current;
     const container = containerRef.current;
-    if (!canvas || !container) return;
+    if (!canvas || !preview || !container) return;
 
     const ratio = window.devicePixelRatio || 1;
     const { width, height } = container.getBoundingClientRect();
+    if (!width || !height) return;
 
-    // Save existing pixels
+    const targetW = Math.floor(width * ratio);
+    const targetH = Math.floor(height * ratio);
+
+    // Save existing pixels of main canvas
     const prev = document.createElement("canvas");
     prev.width = canvas.width;
     prev.height = canvas.height;
@@ -61,14 +149,17 @@ export const PaintApp = () => {
       pctx.drawImage(canvas, 0, 0);
     }
 
-    canvas.width = Math.floor(width * ratio);
-    canvas.height = Math.floor(height * ratio);
-    canvas.style.width = `${width}px`;
-    canvas.style.height = `${height}px`;
+    for (const c of [canvas, preview]) {
+      c.width = targetW;
+      c.height = targetH;
+      c.style.width = `${width}px`;
+      c.style.height = `${height}px`;
+      const cx = c.getContext("2d");
+      if (cx) cx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
 
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
     if (prev.width && prev.height) {
@@ -81,15 +172,28 @@ export const PaintApp = () => {
   useEffect(() => {
     resizeCanvas();
     pushHistory();
-    const ro = new ResizeObserver(() => resizeCanvas());
+    let raf = 0;
+    const ro = new ResizeObserver(() => {
+      // Defer to next frame to avoid the benign
+      // "ResizeObserver loop completed with undelivered notifications" warning.
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => resizeCanvas());
+    });
     if (containerRef.current) ro.observe(containerRef.current);
-    return () => ro.disconnect();
+    return () => {
+      cancelAnimationFrame(raf);
+      ro.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Ignore shortcuts while typing in the text editor or any input.
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) redo();
@@ -101,29 +205,48 @@ export const PaintApp = () => {
         redo();
         return;
       }
-      const map: Record<string, Tool> = { p: "pencil", b: "brush", e: "eraser", f: "fill", i: "picker" };
+      if (e.key === "Escape" && textEditor) {
+        setTextEditor(null);
+        return;
+      }
+      const map: Record<string, Tool> = {
+        p: "pencil",
+        b: "brush",
+        e: "eraser",
+        f: "fill",
+        i: "picker",
+        r: "rectangle",
+        o: "circle",
+        l: "line",
+        g: "triangle",
+        t: "text",
+      };
       const t = map[e.key.toLowerCase()];
       if (t && !e.ctrlKey && !e.metaKey) setTool(t);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [textEditor]);
+
+  // Auto-focus the text editor when it opens
+  useEffect(() => {
+    if (textEditor) {
+      requestAnimationFrame(() => textInputRef.current?.focus());
+    }
+  }, [textEditor]);
 
   const getCtx = () => canvasRef.current?.getContext("2d") ?? null;
+  const getPreviewCtx = () => previewRef.current?.getContext("2d") ?? null;
 
   const pushHistory = () => {
     const canvas = canvasRef.current;
     const ctx = getCtx();
     if (!canvas || !ctx) return;
     const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    // drop redo branch
     historyRef.current = historyRef.current.slice(0, historyIndexRef.current + 1);
     historyRef.current.push(data);
-    // cap history length
-    if (historyRef.current.length > 40) {
-      historyRef.current.shift();
-    }
+    if (historyRef.current.length > 40) historyRef.current.shift();
     historyIndexRef.current = historyRef.current.length - 1;
     setCanUndo(historyIndexRef.current > 0);
     setCanRedo(false);
@@ -133,7 +256,6 @@ export const PaintApp = () => {
     const ctx = getCtx();
     const data = historyRef.current[historyIndexRef.current];
     if (!ctx || !data) return;
-    // Reset transform so putImageData uses raw pixel coords, then restore.
     const ratio = window.devicePixelRatio || 1;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -156,13 +278,13 @@ export const PaintApp = () => {
     restoreFromHistory();
   };
 
-  const getPos = (e: PointerEvent | React.PointerEvent) => {
-    const canvas = canvasRef.current!;
+  const getPos = (e: PointerEvent | React.PointerEvent): Point => {
+    const canvas = previewRef.current ?? canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  const drawLine = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+  const drawLine = (from: Point, to: Point) => {
     const ctx = getCtx();
     if (!ctx) return;
     ctx.globalCompositeOperation = tool === "eraser" ? "destination-out" : "source-over";
@@ -174,7 +296,66 @@ export const PaintApp = () => {
     ctx.stroke();
   };
 
-  // Flood fill using a stack (4-way).
+  const configureShapeStroke = (ctx: CanvasRenderingContext2D) => {
+    ctx.globalCompositeOperation = "source-over";
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1, size);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+  };
+
+  const drawShape = (
+    ctx: CanvasRenderingContext2D,
+    kind: Tool,
+    a: Point,
+    b: Point,
+  ) => {
+    configureShapeStroke(ctx);
+    ctx.beginPath();
+    if (kind === "rectangle") {
+      const x = Math.min(a.x, b.x);
+      const y = Math.min(a.y, b.y);
+      const w = Math.abs(b.x - a.x);
+      const h = Math.abs(b.y - a.y);
+      ctx.rect(x, y, w, h);
+      ctx.stroke();
+    } else if (kind === "circle") {
+      const cx = (a.x + b.x) / 2;
+      const cy = (a.y + b.y) / 2;
+      const rx = Math.abs(b.x - a.x) / 2;
+      const ry = Math.abs(b.y - a.y) / 2;
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (kind === "line") {
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+    } else if (kind === "triangle") {
+      const x = Math.min(a.x, b.x);
+      const y = Math.min(a.y, b.y);
+      const w = Math.abs(b.x - a.x);
+      const h = Math.abs(b.y - a.y);
+      ctx.moveTo(x + w / 2, y);
+      ctx.lineTo(x + w, y + h);
+      ctx.lineTo(x, y + h);
+      ctx.closePath();
+      ctx.stroke();
+    }
+  };
+
+  const clearPreview = () => {
+    const preview = previewRef.current;
+    const ctx = getPreviewCtx();
+    if (!preview || !ctx) return;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, preview.width, preview.height);
+    ctx.restore();
+    const ratio = window.devicePixelRatio || 1;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  };
+
+  // Flood fill (4-way).
   const floodFill = (startX: number, startY: number, hex: string) => {
     const canvas = canvasRef.current;
     const ctx = getCtx();
@@ -235,10 +416,40 @@ export const PaintApp = () => {
     setTool("pencil");
   };
 
+  const commitText = () => {
+    if (!textEditor) return;
+    const ctx = getCtx();
+    if (!ctx) {
+      setTextEditor(null);
+      return;
+    }
+    const value = textEditor.value;
+    if (value.trim().length > 0) {
+      ctx.save();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.fillStyle = color;
+      ctx.font = `${fontSize}px ${fontFamily}`;
+      ctx.textBaseline = "top";
+      const lines = value.split("\n");
+      const lineHeight = Math.round(fontSize * 1.2);
+      lines.forEach((line, i) => {
+        ctx.fillText(line, textEditor.x, textEditor.y + i * lineHeight);
+      });
+      ctx.restore();
+      pushHistory();
+    }
+    setTextEditor(null);
+  };
+
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
     const pos = getPos(e);
+
+    // If a text editor is open, commit it first when clicking elsewhere.
+    if (textEditor) {
+      commitText();
+    }
 
     if (tool === "fill") {
       floodFill(pos.x, pos.y, color);
@@ -249,19 +460,35 @@ export const PaintApp = () => {
       pickColorAt(pos.x, pos.y);
       return;
     }
+    if (tool === "text") {
+      setTextEditor({ x: pos.x, y: pos.y, value: "" });
+      return;
+    }
+    if (SHAPE_TOOLS.includes(tool)) {
+      drawingRef.current = true;
+      shapeStartRef.current = pos;
+      return;
+    }
 
+    // Free-draw tools: pencil, brush, eraser
     drawingRef.current = true;
     lastPointRef.current = pos;
-    // Draw a starting dot
     drawLine(pos, pos);
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawingRef.current) return;
     const pos = getPos(e);
-    const last = lastPointRef.current ?? pos;
 
-    // Use coalesced events for smoother strokes when supported.
+    if (SHAPE_TOOLS.includes(tool) && shapeStartRef.current) {
+      const ctx = getPreviewCtx();
+      if (!ctx) return;
+      clearPreview();
+      drawShape(ctx, tool, shapeStartRef.current, pos);
+      return;
+    }
+
+    const last = lastPointRef.current ?? pos;
     const events = (e.nativeEvent.getCoalescedEvents?.() ?? []) as PointerEvent[];
     if (events.length > 1) {
       let prev = last;
@@ -277,8 +504,20 @@ export const PaintApp = () => {
     }
   };
 
-  const endStroke = () => {
+  const endStroke = (e?: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawingRef.current) return;
+
+    if (SHAPE_TOOLS.includes(tool) && shapeStartRef.current) {
+      const end = e ? getPos(e) : shapeStartRef.current;
+      const ctx = getCtx();
+      if (ctx) drawShape(ctx, tool, shapeStartRef.current, end);
+      clearPreview();
+      shapeStartRef.current = null;
+      drawingRef.current = false;
+      pushHistory();
+      return;
+    }
+
     drawingRef.current = false;
     lastPointRef.current = null;
     pushHistory();
@@ -308,7 +547,15 @@ export const PaintApp = () => {
   };
 
   const cursorClass =
-    tool === "picker" ? "cursor-crosshair" : tool === "fill" ? "cursor-cell" : "cursor-crosshair";
+    tool === "picker"
+      ? "cursor-crosshair"
+      : tool === "fill"
+      ? "cursor-cell"
+      : tool === "text"
+      ? "cursor-text"
+      : "cursor-crosshair";
+
+  const showTextOptions = tool === "text" || textEditor !== null;
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
@@ -316,6 +563,38 @@ export const PaintApp = () => {
       <header className="flex h-12 items-center justify-between border-b border-border bg-toolbar px-4 shadow-soft">
         <h1 className="text-sm font-semibold tracking-tight">Paint</h1>
         <div className="flex items-center gap-1">
+          {showTextOptions && (
+            <div className="mr-2 flex items-center gap-2">
+              <Select value={fontFamily} onValueChange={setFontFamily}>
+                <SelectTrigger className="h-8 w-[120px] text-xs">
+                  <SelectValue placeholder="Font" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FONT_FAMILIES.map((f) => (
+                    <SelectItem key={f} value={f} style={{ fontFamily: f }}>
+                      {FONT_LABELS[f] ?? f}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={String(fontSize)}
+                onValueChange={(v) => setFontSize(parseInt(v, 10))}
+              >
+                <SelectTrigger className="h-8 w-[72px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64, 80, 96].map((s) => (
+                    <SelectItem key={s} value={String(s)}>
+                      {s}px
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <div className="mx-1 h-5 w-px bg-border" />
+            </div>
+          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo} aria-label="Undo">
@@ -354,7 +633,7 @@ export const PaintApp = () => {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left toolbar */}
-        <aside className="flex w-16 flex-col items-center gap-1 border-r border-border bg-toolbar py-3 shadow-soft">
+        <aside className="flex w-16 flex-col items-center gap-1 overflow-y-auto border-r border-border bg-toolbar py-3 shadow-soft">
           {TOOLS.map((t) => {
             const Icon = t.icon;
             const active = tool === t.id;
@@ -364,7 +643,7 @@ export const PaintApp = () => {
                   <button
                     onClick={() => setTool(t.id)}
                     className={cn(
-                      "flex h-10 w-10 items-center justify-center rounded-md transition-colors",
+                      "flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
                       active
                         ? "bg-tool-active text-accent-foreground"
                         : "text-foreground hover:bg-tool-hover",
@@ -382,10 +661,10 @@ export const PaintApp = () => {
             );
           })}
 
-          <div className="my-2 h-px w-8 bg-border" />
+          <div className="my-2 h-px w-8 shrink-0 bg-border" />
 
           {/* Size control (vertical) */}
-          <div className="mt-1 flex flex-col items-center gap-2">
+          <div className="mt-1 flex shrink-0 flex-col items-center gap-2">
             <div
               className="rounded-full border border-border"
               style={{
@@ -418,13 +697,55 @@ export const PaintApp = () => {
           >
             <canvas
               ref={canvasRef}
-              className={cn("block h-full w-full touch-none select-none", cursorClass)}
+              className="absolute inset-0 block h-full w-full select-none"
+            />
+            <canvas
+              ref={previewRef}
+              className={cn(
+                "absolute inset-0 block h-full w-full touch-none select-none",
+                cursorClass,
+              )}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={endStroke}
-              onPointerCancel={endStroke}
-              onPointerLeave={endStroke}
+              onPointerCancel={() => endStroke()}
+              onPointerLeave={() => endStroke()}
             />
+
+            {/* Floating text editor */}
+            {textEditor && (
+              <div
+                className="absolute z-10"
+                style={{ left: textEditor.x, top: textEditor.y }}
+              >
+                <textarea
+                  ref={textInputRef}
+                  value={textEditor.value}
+                  onChange={(e) =>
+                    setTextEditor({ ...textEditor, value: e.target.value })
+                  }
+                  onBlur={commitText}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") {
+                      e.preventDefault();
+                      setTextEditor(null);
+                    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                      e.preventDefault();
+                      commitText();
+                    }
+                  }}
+                  rows={1}
+                  placeholder="Type…"
+                  className="min-w-[120px] resize-none overflow-hidden whitespace-pre rounded-sm border border-dashed border-tool-active bg-canvas/80 p-1 leading-tight outline-none ring-1 ring-tool-active/30 backdrop-blur-sm"
+                  style={{
+                    color,
+                    fontSize: `${fontSize}px`,
+                    fontFamily,
+                    lineHeight: 1.2,
+                  }}
+                />
+              </div>
+            )}
           </div>
         </main>
       </div>
