@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Sun,
   Moon,
+  MousePointer2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
