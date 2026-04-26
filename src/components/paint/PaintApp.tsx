@@ -49,9 +49,10 @@ import {
 
 import { SHAPES, SHAPE_LOOKUP, renderShape, type DrawnShape, type ShapeKind } from "./shapes";
 import { ShapeTransformer } from "./ShapeTransformer";
+import { SelectionLayer, type FloatingSelection } from "./SelectionLayer";
 import { useTheme } from "./useTheme";
 
-type Tool = "pencil" | "brush" | "eraser" | "fill" | "picker" | "shape" | "text";
+type Tool = "select" | "pencil" | "brush" | "eraser" | "fill" | "picker" | "shape" | "text";
 
 const PRESET_COLORS = [
   "#000000", "#7f7f7f", "#880015", "#ed1c24", "#ff7f27", "#fff200",
