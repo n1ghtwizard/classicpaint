@@ -611,15 +611,67 @@ export const PaintApp = () => {
     setTextEditor(null);
   };
 
+  // Lift the pixels under the marquee into a floating selection.
+  const liftSelection = useCallback((rect: { x: number; y: number; w: number; h: number }) => {
+    const canvas = canvasRef.current;
+    const ctx = getCtx();
+    if (!canvas || !ctx) return;
+    const ratio = window.devicePixelRatio || 1;
+    const px = Math.max(0, Math.floor(rect.x * ratio));
+    const py = Math.max(0, Math.floor(rect.y * ratio));
+    const pw = Math.min(canvas.width - px, Math.floor(rect.w * ratio));
+    const ph = Math.min(canvas.height - py, Math.floor(rect.h * ratio));
+    if (pw <= 0 || ph <= 0) return;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const data = ctx.getImageData(px, py, pw, ph);
+    // Knock the lifted region out of the canvas with white.
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(px, py, pw, ph);
+    ctx.restore();
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+
+    setSelection({
+      originX: px / ratio,
+      originY: py / ratio,
+      x: px / ratio,
+      y: py / ratio,
+      w: pw / ratio,
+      h: ph / ratio,
+      imageData: data,
+    });
+    pushHistory();
+  }, []);
+
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
     const pos = getPos(e);
 
-    // Clicking the canvas while a shape is being transformed commits it.
-    if (activeShapeRef.current) {
-      commitActiveShape();
+    // Selection tool: clicking outside an existing floating selection commits
+    // it and starts a new marquee.
+    if (tool === "select") {
+      if (selectionRef.current) {
+        const sel = selectionRef.current;
+        const inside =
+          pos.x >= sel.x && pos.x <= sel.x + sel.w &&
+          pos.y >= sel.y && pos.y <= sel.y + sel.h;
+        if (inside) {
+          // Drag handled by the SelectionLayer overlay — let it through.
+          return;
+        }
+        commitSelection();
+      }
+      drawingRef.current = true;
+      marqueeRef.current = { startX: pos.x, startY: pos.y };
+      setMarquee({ x: pos.x, y: pos.y, w: 0, h: 0 });
+      return;
     }
+
+    // Any other tool: bake any pending overlays first.
+    if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
     if (textEditor) commitText();
 
     if (tool === "fill") {
@@ -636,15 +688,17 @@ export const PaintApp = () => {
       return;
     }
     if (tool === "shape") {
-      drawingRef.current = true;
-      shapeStartRef.current = pos;
-      // Seed a tiny shape so the preview shows something immediately.
+      // Drop a default-sized shape centered on the click; user adjusts via the
+      // transformer overlay. No drag-to-draw — keeps the workflow predictable.
+      const isLine = shapeKind === "line" || shapeKind === "diagonal-line";
+      const w = 200;
+      const h = isLine ? 200 : 140;
       setActiveShape({
         kind: shapeKind,
-        x: pos.x,
-        y: pos.y,
-        w: 1,
-        h: 1,
+        x: pos.x - w / 2,
+        y: pos.y - h / 2,
+        w,
+        h,
         rotation: 0,
         color,
         strokeWidth: size,
@@ -672,20 +726,14 @@ export const PaintApp = () => {
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawingRef.current) return;
 
-    if (tool === "shape" && shapeStartRef.current) {
+    if (tool === "select" && marqueeRef.current) {
       const pos = getPos(e);
-      const start = shapeStartRef.current;
-      const x = Math.min(start.x, pos.x);
-      const y = Math.min(start.y, pos.y);
-      const w = Math.max(MIN_SHAPE_SIZE, Math.abs(pos.x - start.x));
-      const h = Math.max(MIN_SHAPE_SIZE, Math.abs(pos.y - start.y));
-      setActiveShape({
-        kind: shapeKind,
-        x, y, w, h,
-        rotation: 0,
-        color,
-        strokeWidth: size,
-        fill: null,
+      const start = marqueeRef.current;
+      setMarquee({
+        x: Math.min(start.startX, pos.x),
+        y: Math.min(start.startY, pos.y),
+        w: Math.abs(pos.x - start.startX),
+        h: Math.abs(pos.y - start.startY),
       });
       return;
     }
@@ -701,27 +749,14 @@ export const PaintApp = () => {
   const endStroke = (e?: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawingRef.current) return;
 
-    if (tool === "shape" && shapeStartRef.current) {
-      // Final size from the latest pointer position, then leave the shape
-      // editable — the transformer overlay shows up automatically.
-      if (e) {
-        const pos = getPos(e);
-        const start = shapeStartRef.current;
-        const x = Math.min(start.x, pos.x);
-        const y = Math.min(start.y, pos.y);
-        const w = Math.max(MIN_SHAPE_SIZE, Math.abs(pos.x - start.x));
-        const h = Math.max(MIN_SHAPE_SIZE, Math.abs(pos.y - start.y));
-        setActiveShape({
-          kind: shapeKind,
-          x, y, w, h,
-          rotation: 0,
-          color,
-          strokeWidth: size,
-          fill: null,
-        });
-      }
-      shapeStartRef.current = null;
+    if (tool === "select" && marqueeRef.current) {
+      const m = marquee;
+      marqueeRef.current = null;
+      setMarquee(null);
       drawingRef.current = false;
+      if (m && m.w > 4 && m.h > 4) {
+        liftSelection(m);
+      }
       return;
     }
 
