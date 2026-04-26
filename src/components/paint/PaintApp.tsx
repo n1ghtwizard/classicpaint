@@ -870,7 +870,7 @@ export const PaintApp = () => {
               presetId === "fit" ? "h-full w-full" : "shrink-0",
             )}
             style={
-              presetId === "fit"
+              currentPreset.id === "fit"
                 ? undefined
                 : { width: currentPreset.width, height: currentPreset.height }
             }
