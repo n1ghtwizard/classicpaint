@@ -9,13 +9,12 @@ import {
   Download,
   Undo2,
   Redo2,
-  Square,
-  Circle,
-  Minus,
-  Triangle,
   Type,
   Maximize2,
   ChevronDown,
+  Shapes,
+  Sun,
+  Moon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
@@ -36,6 +35,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,19 +47,11 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
-type Tool =
-  | "pencil"
-  | "brush"
-  | "eraser"
-  | "fill"
-  | "picker"
-  | "rectangle"
-  | "circle"
-  | "line"
-  | "triangle"
-  | "text";
+import { SHAPES, SHAPE_LOOKUP, renderShape, type DrawnShape, type ShapeKind } from "./shapes";
+import { ShapeTransformer } from "./ShapeTransformer";
+import { useTheme } from "./useTheme";
 
-const SHAPE_TOOLS: Tool[] = ["rectangle", "circle", "line", "triangle"];
+type Tool = "pencil" | "brush" | "eraser" | "fill" | "picker" | "shape" | "text";
 
 const PRESET_COLORS = [
   "#000000", "#7f7f7f", "#880015", "#ed1c24", "#ff7f27", "#fff200",
@@ -99,10 +91,6 @@ const TOOLS: ToolBtn[] = [
   { id: "eraser", icon: Eraser, label: "Eraser", shortcut: "E" },
   { id: "fill", icon: PaintBucket, label: "Fill bucket", shortcut: "F" },
   { id: "picker", icon: Pipette, label: "Color picker", shortcut: "I" },
-  { id: "rectangle", icon: Square, label: "Rectangle", shortcut: "R" },
-  { id: "circle", icon: Circle, label: "Ellipse", shortcut: "O" },
-  { id: "line", icon: Minus, label: "Line", shortcut: "L" },
-  { id: "triangle", icon: Triangle, label: "Triangle", shortcut: "G" },
   { id: "text", icon: Type, label: "Text", shortcut: "T" },
 ];
 
@@ -117,7 +105,6 @@ interface TextEditor {
   value: string;
 }
 
-// "fit" sizes the canvas to its container; everything else is a fixed CSS-pixel size.
 type CanvasPreset =
   | { id: "fit"; label: "Fit to window" }
   | { id: "a4-portrait"; label: "A4 (portrait)"; width: number; height: number }
@@ -127,12 +114,13 @@ type CanvasPreset =
 
 const PRESETS: CanvasPreset[] = [
   { id: "fit", label: "Fit to window" },
-  // A4 at ~96dpi (210x297mm)
   { id: "a4-portrait", label: "A4 (portrait)", width: 794, height: 1123 },
   { id: "a4-landscape", label: "A4 (landscape)", width: 1123, height: 794 },
   { id: "square", label: "Square 1:1", width: 1000, height: 1000 },
   { id: "widescreen", label: "Widescreen 16:9", width: 1280, height: 720 },
 ];
+
+const MIN_SHAPE_SIZE = 4;
 
 export const PaintApp = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -152,6 +140,8 @@ export const PaintApp = () => {
   const textInputRef = useRef<HTMLTextAreaElement>(null);
 
   const [tool, setTool] = useState<Tool>("pencil");
+  const [shapeKind, setShapeKind] = useState<ShapeKind>("rectangle");
+  const [shapesMenuOpen, setShapesMenuOpen] = useState(false);
   const [color, setColor] = useState("#000000");
   const [size, setSize] = useState(6);
   const [canUndo, setCanUndo] = useState(false);
@@ -164,8 +154,14 @@ export const PaintApp = () => {
   const [presetId, setPresetId] = useState<CanvasPreset["id"]>("fit");
   const [confirmNew, setConfirmNew] = useState(false);
 
-  // Refs for live values used inside imperative handlers — avoids stale closures
-  // and lets us avoid re-binding listeners on every keystroke.
+  // The currently-editing shape — drawn into the preview canvas, not yet
+  // committed to the main canvas. While set, the transformer overlay is shown.
+  const [activeShape, setActiveShape] = useState<DrawnShape | null>(null);
+  const activeShapeRef = useRef<DrawnShape | null>(null);
+  activeShapeRef.current = activeShape;
+
+  const { theme, toggle: toggleTheme } = useTheme();
+
   const toolRef = useRef(tool);
   const colorRef = useRef(color);
   const sizeRef = useRef(size);
@@ -176,9 +172,31 @@ export const PaintApp = () => {
   const getCtx = () => canvasRef.current?.getContext("2d") ?? null;
   const getPreviewCtx = () => previewRef.current?.getContext("2d") ?? null;
 
-  // Resize both canvases. If a fixed preset is active we use that size; otherwise
-  // the container size. Existing pixels are preserved with a centered draw so the
-  // user keeps their work when switching presets or the window resizes.
+  const clearPreview = useCallback(() => {
+    const preview = previewRef.current;
+    const ctx = getPreviewCtx();
+    if (!preview || !ctx) return;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, preview.width, preview.height);
+    ctx.restore();
+    const ratio = window.devicePixelRatio || 1;
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  }, []);
+
+  const renderActiveShapeToPreview = useCallback(() => {
+    const ctx = getPreviewCtx();
+    const shape = activeShapeRef.current;
+    clearPreview();
+    if (!ctx || !shape) return;
+    renderShape(ctx, shape);
+  }, [clearPreview]);
+
+  // Re-render the preview whenever the active shape changes.
+  useEffect(() => {
+    renderActiveShapeToPreview();
+  }, [activeShape, renderActiveShapeToPreview]);
+
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const preview = previewRef.current;
@@ -203,7 +221,6 @@ export const PaintApp = () => {
     const targetW = Math.floor(cssW * ratio);
     const targetH = Math.floor(cssH * ratio);
 
-    // Save existing pixels of main canvas
     const prev = document.createElement("canvas");
     prev.width = canvas.width;
     prev.height = canvas.height;
@@ -230,11 +247,13 @@ export const PaintApp = () => {
     }
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-  }, [presetId]);
+
+    // Re-render any active shape on top of the resized preview.
+    renderActiveShapeToPreview();
+  }, [presetId, renderActiveShapeToPreview]);
 
   useEffect(() => {
     resizeCanvas();
-    // Initial history snapshot only — subsequent preset changes shouldn't add one.
     if (historyRef.current.length === 0) pushHistory();
     let raf = 0;
     const ro = new ResizeObserver(() => {
@@ -248,6 +267,20 @@ export const PaintApp = () => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetId]);
+
+  // Commit the current shape to the main canvas and clear the overlay.
+  const commitActiveShape = useCallback(() => {
+    const shape = activeShapeRef.current;
+    const ctx = getCtx();
+    if (!shape || !ctx) {
+      setActiveShape(null);
+      return;
+    }
+    renderShape(ctx, shape);
+    setActiveShape(null);
+    clearPreview();
+    pushHistory();
+  }, [clearPreview]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -266,21 +299,32 @@ export const PaintApp = () => {
         redo();
         return;
       }
-      if (e.key === "Escape" && textEditor) {
-        setTextEditor(null);
+      if (e.key === "Escape") {
+        if (textEditor) setTextEditor(null);
+        if (activeShapeRef.current) {
+          // Cancel pending shape without committing.
+          setActiveShape(null);
+          clearPreview();
+        }
         return;
       }
       const map: Record<string, Tool> = {
-        p: "pencil", b: "brush", e: "eraser", f: "fill", i: "picker",
-        r: "rectangle", o: "circle", l: "line", g: "triangle", t: "text",
+        p: "pencil", b: "brush", e: "eraser", f: "fill", i: "picker", t: "text",
       };
       const t = map[e.key.toLowerCase()];
-      if (t && !e.ctrlKey && !e.metaKey) setTool(t);
+      if (t && !e.ctrlKey && !e.metaKey) {
+        // Switching tools commits any pending shape.
+        if (activeShapeRef.current) commitActiveShape();
+        setTool(t);
+      }
+      if (e.key.toLowerCase() === "s" && !e.ctrlKey && !e.metaKey) {
+        setTool("shape");
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textEditor]);
+  }, [textEditor, commitActiveShape, clearPreview]);
 
   useEffect(() => {
     if (textEditor) {
@@ -301,8 +345,6 @@ export const PaintApp = () => {
     setCanRedo(false);
   };
 
-  // Restoring uses putImageData, which only works when the snapshot dimensions
-  // match the current canvas. If the user changed the preset, we just skip.
   const restoreFromHistory = () => {
     const canvas = canvasRef.current;
     const ctx = getCtx();
@@ -324,6 +366,12 @@ export const PaintApp = () => {
   };
 
   const undo = () => {
+    if (activeShapeRef.current) {
+      // Cancel the in-progress shape rather than walking history.
+      setActiveShape(null);
+      clearPreview();
+      return;
+    }
     if (historyIndexRef.current <= 0) return;
     historyIndexRef.current -= 1;
     restoreFromHistory();
@@ -341,9 +389,6 @@ export const PaintApp = () => {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  // Smooth strokes: draw quadratic curves between midpoints of consecutive
-  // pointer samples. Combined with rAF batching this gives a native, low-lag
-  // feel even when the browser fires many events per frame.
   const flushStroke = () => {
     rafRef.current = null;
     const ctx = getCtx();
@@ -380,65 +425,6 @@ export const PaintApp = () => {
     if (rafRef.current == null) {
       rafRef.current = requestAnimationFrame(flushStroke);
     }
-  };
-
-  const configureShapeStroke = (ctx: CanvasRenderingContext2D) => {
-    ctx.globalCompositeOperation = "source-over";
-    ctx.strokeStyle = colorRef.current;
-    ctx.lineWidth = Math.max(1, sizeRef.current);
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-  };
-
-  const drawShape = (
-    ctx: CanvasRenderingContext2D,
-    kind: Tool,
-    a: Point,
-    b: Point,
-  ) => {
-    configureShapeStroke(ctx);
-    ctx.beginPath();
-    if (kind === "rectangle") {
-      const x = Math.min(a.x, b.x);
-      const y = Math.min(a.y, b.y);
-      const w = Math.abs(b.x - a.x);
-      const h = Math.abs(b.y - a.y);
-      ctx.rect(x, y, w, h);
-      ctx.stroke();
-    } else if (kind === "circle") {
-      const cx = (a.x + b.x) / 2;
-      const cy = (a.y + b.y) / 2;
-      const rx = Math.abs(b.x - a.x) / 2;
-      const ry = Math.abs(b.y - a.y) / 2;
-      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (kind === "line") {
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.stroke();
-    } else if (kind === "triangle") {
-      const x = Math.min(a.x, b.x);
-      const y = Math.min(a.y, b.y);
-      const w = Math.abs(b.x - a.x);
-      const h = Math.abs(b.y - a.y);
-      ctx.moveTo(x + w / 2, y);
-      ctx.lineTo(x + w, y + h);
-      ctx.lineTo(x, y + h);
-      ctx.closePath();
-      ctx.stroke();
-    }
-  };
-
-  const clearPreview = () => {
-    const preview = previewRef.current;
-    const ctx = getPreviewCtx();
-    if (!preview || !ctx) return;
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, preview.width, preview.height);
-    ctx.restore();
-    const ratio = window.devicePixelRatio || 1;
-    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   };
 
   const floodFill = (startX: number, startY: number, hex: string) => {
@@ -531,6 +517,10 @@ export const PaintApp = () => {
     (e.target as Element).setPointerCapture(e.pointerId);
     const pos = getPos(e);
 
+    // Clicking the canvas while a shape is being transformed commits it.
+    if (activeShapeRef.current) {
+      commitActiveShape();
+    }
     if (textEditor) commitText();
 
     if (tool === "fill") {
@@ -546,13 +536,24 @@ export const PaintApp = () => {
       setTextEditor({ x: pos.x, y: pos.y, value: "" });
       return;
     }
-    if (SHAPE_TOOLS.includes(tool)) {
+    if (tool === "shape") {
       drawingRef.current = true;
       shapeStartRef.current = pos;
+      // Seed a tiny shape so the preview shows something immediately.
+      setActiveShape({
+        kind: shapeKind,
+        x: pos.x,
+        y: pos.y,
+        w: 1,
+        h: 1,
+        rotation: 0,
+        color,
+        strokeWidth: size,
+        fill: null,
+      });
       return;
     }
 
-    // Free-draw: paint an initial dot so single taps are visible.
     drawingRef.current = true;
     lastPointRef.current = pos;
     midPointRef.current = pos;
@@ -572,16 +573,24 @@ export const PaintApp = () => {
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawingRef.current) return;
 
-    if (SHAPE_TOOLS.includes(tool) && shapeStartRef.current) {
+    if (tool === "shape" && shapeStartRef.current) {
       const pos = getPos(e);
-      const ctx = getPreviewCtx();
-      if (!ctx) return;
-      clearPreview();
-      drawShape(ctx, tool, shapeStartRef.current, pos);
+      const start = shapeStartRef.current;
+      const x = Math.min(start.x, pos.x);
+      const y = Math.min(start.y, pos.y);
+      const w = Math.max(MIN_SHAPE_SIZE, Math.abs(pos.x - start.x));
+      const h = Math.max(MIN_SHAPE_SIZE, Math.abs(pos.y - start.y));
+      setActiveShape({
+        kind: shapeKind,
+        x, y, w, h,
+        rotation: 0,
+        color,
+        strokeWidth: size,
+        fill: null,
+      });
       return;
     }
 
-    // Free-draw: collect coalesced events for accuracy, then flush on rAF.
     const events = (e.nativeEvent.getCoalescedEvents?.() ?? []) as PointerEvent[];
     if (events.length > 1) {
       for (const ev of events) queuePoint(getPos(ev));
@@ -593,18 +602,30 @@ export const PaintApp = () => {
   const endStroke = (e?: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawingRef.current) return;
 
-    if (SHAPE_TOOLS.includes(tool) && shapeStartRef.current) {
-      const end = e ? getPos(e) : shapeStartRef.current;
-      const ctx = getCtx();
-      if (ctx) drawShape(ctx, tool, shapeStartRef.current, end);
-      clearPreview();
+    if (tool === "shape" && shapeStartRef.current) {
+      // Final size from the latest pointer position, then leave the shape
+      // editable — the transformer overlay shows up automatically.
+      if (e) {
+        const pos = getPos(e);
+        const start = shapeStartRef.current;
+        const x = Math.min(start.x, pos.x);
+        const y = Math.min(start.y, pos.y);
+        const w = Math.max(MIN_SHAPE_SIZE, Math.abs(pos.x - start.x));
+        const h = Math.max(MIN_SHAPE_SIZE, Math.abs(pos.y - start.y));
+        setActiveShape({
+          kind: shapeKind,
+          x, y, w, h,
+          rotation: 0,
+          color,
+          strokeWidth: size,
+          fill: null,
+        });
+      }
       shapeStartRef.current = null;
       drawingRef.current = false;
-      pushHistory();
       return;
     }
 
-    // Flush any queued points synchronously so the snapshot includes them.
     if (rafRef.current != null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -621,6 +642,8 @@ export const PaintApp = () => {
     const canvas = canvasRef.current;
     const ctx = getCtx();
     if (!canvas || !ctx) return;
+    setActiveShape(null);
+    clearPreview();
     const ratio = window.devicePixelRatio || 1;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -631,10 +654,9 @@ export const PaintApp = () => {
     pushHistory();
   };
 
-  // Composite the drawing onto an opaque white background and download.
-  // JPEG has no alpha channel, so we always flatten to white before exporting
-  // — otherwise transparent pixels become black in some encoders.
   const exportImage = (format: "png" | "jpg") => {
+    // Make sure pending shapes are baked in before exporting.
+    if (activeShapeRef.current) commitActiveShape();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const out = document.createElement("canvas");
@@ -666,6 +688,9 @@ export const PaintApp = () => {
 
   const showTextOptions = tool === "text" || textEditor !== null;
   const currentPreset = PRESETS.find((p) => p.id === presetId)!;
+  const currentShape = SHAPE_LOOKUP[shapeKind];
+  const ShapeIcon = currentShape.icon;
+  const containerRect = containerRef.current?.getBoundingClientRect();
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
@@ -762,7 +787,7 @@ export const PaintApp = () => {
           )}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo} aria-label="Undo">
+              <Button variant="ghost" size="icon" onClick={undo} disabled={!canUndo && !activeShape} aria-label="Undo">
                 <Undo2 className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
@@ -777,6 +802,14 @@ export const PaintApp = () => {
             <TooltipContent>Redo (⌘Y / ⌘⇧Z)</TooltipContent>
           </Tooltip>
           <div className="mx-2 h-5 w-px bg-border" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" onClick={toggleTheme} aria-label="Toggle theme">
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>{theme === "dark" ? "Light mode" : "Dark mode"}</TooltipContent>
+          </Tooltip>
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -814,7 +847,10 @@ export const PaintApp = () => {
               <Tooltip key={t.id}>
                 <TooltipTrigger asChild>
                   <button
-                    onClick={() => setTool(t.id)}
+                    onClick={() => {
+                      if (activeShapeRef.current) commitActiveShape();
+                      setTool(t.id);
+                    }}
                     className={cn(
                       "flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
                       active
@@ -833,6 +869,71 @@ export const PaintApp = () => {
               </Tooltip>
             );
           })}
+
+          {/* Shapes button — opens a popover with the full shape grid */}
+          <Popover open={shapesMenuOpen} onOpenChange={setShapesMenuOpen}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    onClick={() => {
+                      if (activeShapeRef.current) commitActiveShape();
+                      setTool("shape");
+                    }}
+                    className={cn(
+                      "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
+                      tool === "shape"
+                        ? "bg-tool-active text-accent-foreground"
+                        : "text-foreground hover:bg-tool-hover",
+                    )}
+                    aria-label="Shapes"
+                    aria-pressed={tool === "shape"}
+                  >
+                    <ShapeIcon className="h-[18px] w-[18px]" />
+                    <ChevronDown className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5 opacity-70" />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                Shapes <span className="ml-1 text-muted-foreground">(S)</span>
+              </TooltipContent>
+            </Tooltip>
+            <PopoverContent side="right" align="start" className="w-[260px] p-2">
+              <div className="mb-2 px-1 text-[11px] font-medium text-muted-foreground">
+                Shapes
+              </div>
+              <div className="grid grid-cols-6 gap-1">
+                {SHAPES.map((s) => {
+                  const Icon = s.icon;
+                  const active = s.id === shapeKind && tool === "shape";
+                  return (
+                    <Tooltip key={s.id}>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => {
+                            if (activeShapeRef.current) commitActiveShape();
+                            setShapeKind(s.id);
+                            setTool("shape");
+                            setShapesMenuOpen(false);
+                          }}
+                          className={cn(
+                            "flex h-9 w-9 items-center justify-center rounded-md transition-colors",
+                            active
+                              ? "bg-tool-active text-accent-foreground"
+                              : "text-foreground hover:bg-tool-hover",
+                          )}
+                          aria-label={s.label}
+                        >
+                          <Icon className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">{s.label}</TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+            </PopoverContent>
+          </Popover>
 
           <div className="my-2 h-px w-8 shrink-0 bg-border" />
 
@@ -853,7 +954,12 @@ export const PaintApp = () => {
                 min={1}
                 max={48}
                 step={1}
-                onValueChange={(v) => setSize(v[0])}
+                onValueChange={(v) => {
+                  setSize(v[0]);
+                  if (activeShape) {
+                    setActiveShape({ ...activeShape, strokeWidth: v[0] });
+                  }
+                }}
                 aria-label="Brush size"
               />
             </div>
@@ -867,7 +973,7 @@ export const PaintApp = () => {
             ref={containerRef}
             className={cn(
               "relative overflow-hidden rounded-lg border border-border bg-canvas shadow-panel",
-              presetId === "fit" ? "h-full w-full" : "shrink-0",
+              currentPreset.id === "fit" ? "h-full w-full" : "shrink-0",
             )}
             style={
               currentPreset.id === "fit"
@@ -892,6 +998,22 @@ export const PaintApp = () => {
               onPointerLeave={() => endStroke()}
             />
 
+            {/* Shape transformer overlay — shown only after a shape is drawn,
+                while the user is still adjusting it. */}
+            {activeShape && containerRect && (
+              <ShapeTransformer
+                shape={activeShape}
+                containerWidth={containerRect.width}
+                containerHeight={containerRect.height}
+                onChange={(s) => {
+                  // Live re-color/size from the toolbar still works because
+                  // the strokeWidth/color come from the shape itself.
+                  setActiveShape(s);
+                }}
+                onCommit={commitActiveShape}
+              />
+            )}
+
             {textEditor && (
               <div
                 className="absolute z-10"
@@ -915,7 +1037,7 @@ export const PaintApp = () => {
                   }}
                   rows={1}
                   placeholder="Type…"
-                  className="min-w-[120px] resize-none overflow-hidden whitespace-pre rounded-sm border border-dashed border-tool-active bg-canvas/80 p-1 leading-tight outline-none ring-1 ring-tool-active/30 backdrop-blur-sm"
+                  className="min-w-[120px] resize-none overflow-hidden whitespace-pre rounded-sm border border-dashed border-tool-active bg-canvas/80 p-1 leading-tight text-foreground outline-none ring-1 ring-tool-active/30 backdrop-blur-sm"
                   style={{
                     color,
                     fontSize: `${fontSize}px`,
@@ -942,7 +1064,10 @@ export const PaintApp = () => {
             <input
               type="color"
               value={color}
-              onChange={(e) => setColor(e.target.value)}
+              onChange={(e) => {
+                setColor(e.target.value);
+                if (activeShape) setActiveShape({ ...activeShape, color: e.target.value });
+              }}
               className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
               aria-label="Custom color"
             />
@@ -957,7 +1082,10 @@ export const PaintApp = () => {
             return (
               <button
                 key={c}
-                onClick={() => setColor(c)}
+                onClick={() => {
+                  setColor(c);
+                  if (activeShape) setActiveShape({ ...activeShape, color: c });
+                }}
                 className={cn(
                   "h-6 w-6 rounded-md border transition-transform hover:scale-110",
                   active ? "border-tool-active ring-2 ring-tool-active/40" : "border-border",
@@ -969,8 +1097,13 @@ export const PaintApp = () => {
           })}
         </div>
 
-        <div className="ml-auto text-xs text-muted-foreground">
-          {TOOLS.find((t) => t.id === tool)?.label}
+        <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+          {activeShape && (
+            <span className="hidden md:inline">
+              Drag handles to resize · top dot rotates · Enter to confirm · Esc to cancel
+            </span>
+          )}
+          <span>{tool === "shape" ? `Shape: ${currentShape.label}` : TOOLS.find((t) => t.id === tool)?.label}</span>
         </div>
       </footer>
 
