@@ -162,6 +162,15 @@ export const PaintApp = () => {
   const activeShapeRef = useRef<DrawnShape | null>(null);
   activeShapeRef.current = activeShape;
 
+  // Lifted selection (a region of pixels detached from the canvas, draggable).
+  const [selection, setSelection] = useState<FloatingSelection | null>(null);
+  const selectionRef = useRef<FloatingSelection | null>(null);
+  selectionRef.current = selection;
+
+  // In-progress marquee while the user drags out a selection rectangle.
+  const marqueeRef = useRef<{ startX: number; startY: number } | null>(null);
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+
   const { theme, toggle: toggleTheme } = useTheme();
 
   const toolRef = useRef(tool);
@@ -186,6 +195,26 @@ export const PaintApp = () => {
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   }, []);
 
+  // Draw the lifted selection bitmap onto the preview canvas at its current
+  // floating position. Called on every selection change.
+  const renderSelectionToPreview = useCallback((sel: FloatingSelection) => {
+    const ctx = getPreviewCtx();
+    if (!ctx) return;
+    const ratio = window.devicePixelRatio || 1;
+    // We need to draw the ImageData (in physical pixels) at a CSS-pixel
+    // location. Use a temp canvas to convert, then drawImage with scaling.
+    const tmp = document.createElement("canvas");
+    tmp.width = sel.imageData.width;
+    tmp.height = sel.imageData.height;
+    const tctx = tmp.getContext("2d");
+    if (!tctx) return;
+    tctx.putImageData(sel.imageData, 0, 0);
+    ctx.save();
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.drawImage(tmp, sel.x, sel.y, sel.w, sel.h);
+    ctx.restore();
+  }, []);
+
   const renderActiveShapeToPreview = useCallback(() => {
     const ctx = getPreviewCtx();
     const shape = activeShapeRef.current;
@@ -194,10 +223,13 @@ export const PaintApp = () => {
     renderShape(ctx, shape);
   }, [clearPreview]);
 
-  // Re-render the preview whenever the active shape changes.
+  // Re-render the preview whenever the active shape or selection changes.
   useEffect(() => {
-    renderActiveShapeToPreview();
-  }, [activeShape, renderActiveShapeToPreview]);
+    clearPreview();
+    if (activeShape) renderShape(getPreviewCtx()!, activeShape);
+    if (selection) renderSelectionToPreview(selection);
+    // marquee is drawn separately via overlay div
+  }, [activeShape, selection, clearPreview, renderSelectionToPreview]);
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
