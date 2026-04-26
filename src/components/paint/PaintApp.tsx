@@ -5,7 +5,7 @@ import {
   Eraser,
   PaintBucket,
   Pipette,
-  Trash2,
+  FilePlus,
   Download,
   Undo2,
   Redo2,
@@ -14,6 +14,8 @@ import {
   Minus,
   Triangle,
   Type,
+  Maximize2,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
@@ -26,6 +28,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type Tool =
   | "pencil"
@@ -97,6 +117,23 @@ interface TextEditor {
   value: string;
 }
 
+// "fit" sizes the canvas to its container; everything else is a fixed CSS-pixel size.
+type CanvasPreset =
+  | { id: "fit"; label: "Fit to window" }
+  | { id: "a4-portrait"; label: "A4 (portrait)"; width: number; height: number }
+  | { id: "a4-landscape"; label: "A4 (landscape)"; width: number; height: number }
+  | { id: "square"; label: "Square 1:1"; width: number; height: number }
+  | { id: "widescreen"; label: "Widescreen 16:9"; width: number; height: number };
+
+const PRESETS: CanvasPreset[] = [
+  { id: "fit", label: "Fit to window" },
+  // A4 at ~96dpi (210x297mm)
+  { id: "a4-portrait", label: "A4 (portrait)", width: 794, height: 1123 },
+  { id: "a4-landscape", label: "A4 (landscape)", width: 1123, height: 794 },
+  { id: "square", label: "Square 1:1", width: 1000, height: 1000 },
+  { id: "widescreen", label: "Widescreen 16:9", width: 1280, height: 720 },
+];
+
 export const PaintApp = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const previewRef = useRef<HTMLCanvasElement>(null);
@@ -104,7 +141,10 @@ export const PaintApp = () => {
 
   const drawingRef = useRef(false);
   const lastPointRef = useRef<Point | null>(null);
+  const midPointRef = useRef<Point | null>(null);
   const shapeStartRef = useRef<Point | null>(null);
+  const pendingPointsRef = useRef<Point[]>([]);
+  const rafRef = useRef<number | null>(null);
 
   const historyRef = useRef<ImageData[]>([]);
   const historyIndexRef = useRef(-1);
@@ -121,12 +161,24 @@ export const PaintApp = () => {
   const [fontFamily, setFontFamily] = useState(FONT_FAMILIES[0]);
   const [textEditor, setTextEditor] = useState<TextEditor | null>(null);
 
-  // Keep latest tool/color/size in refs for stable handlers (not strictly required
-  // since handlers are inline, but useful for clarity).
-  const toolRef = useRef(tool);
-  toolRef.current = tool;
+  const [presetId, setPresetId] = useState<CanvasPreset["id"]>("fit");
+  const [confirmNew, setConfirmNew] = useState(false);
 
-  // Resize both canvases to match the container, preserving the main canvas content.
+  // Refs for live values used inside imperative handlers — avoids stale closures
+  // and lets us avoid re-binding listeners on every keystroke.
+  const toolRef = useRef(tool);
+  const colorRef = useRef(color);
+  const sizeRef = useRef(size);
+  toolRef.current = tool;
+  colorRef.current = color;
+  sizeRef.current = size;
+
+  const getCtx = () => canvasRef.current?.getContext("2d") ?? null;
+  const getPreviewCtx = () => previewRef.current?.getContext("2d") ?? null;
+
+  // Resize both canvases. If a fixed preset is active we use that size; otherwise
+  // the container size. Existing pixels are preserved with a centered draw so the
+  // user keeps their work when switching presets or the window resizes.
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const preview = previewRef.current;
@@ -134,11 +186,22 @@ export const PaintApp = () => {
     if (!canvas || !preview || !container) return;
 
     const ratio = window.devicePixelRatio || 1;
-    const { width, height } = container.getBoundingClientRect();
-    if (!width || !height) return;
+    const preset = PRESETS.find((p) => p.id === presetId)!;
 
-    const targetW = Math.floor(width * ratio);
-    const targetH = Math.floor(height * ratio);
+    let cssW: number;
+    let cssH: number;
+    if (preset.id === "fit") {
+      const r = container.getBoundingClientRect();
+      cssW = Math.floor(r.width);
+      cssH = Math.floor(r.height);
+    } else {
+      cssW = preset.width;
+      cssH = preset.height;
+    }
+    if (!cssW || !cssH) return;
+
+    const targetW = Math.floor(cssW * ratio);
+    const targetH = Math.floor(cssH * ratio);
 
     // Save existing pixels of main canvas
     const prev = document.createElement("canvas");
@@ -152,8 +215,8 @@ export const PaintApp = () => {
     for (const c of [canvas, preview]) {
       c.width = targetW;
       c.height = targetH;
-      c.style.width = `${width}px`;
-      c.style.height = `${height}px`;
+      c.style.width = `${cssW}px`;
+      c.style.height = `${cssH}px`;
       const cx = c.getContext("2d");
       if (cx) cx.setTransform(ratio, 0, 0, ratio, 0, 0);
     }
@@ -161,21 +224,20 @@ export const PaintApp = () => {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, cssW, cssH);
     if (prev.width && prev.height) {
       ctx.drawImage(prev, 0, 0, prev.width / ratio, prev.height / ratio);
     }
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-  }, []);
+  }, [presetId]);
 
   useEffect(() => {
     resizeCanvas();
-    pushHistory();
+    // Initial history snapshot only — subsequent preset changes shouldn't add one.
+    if (historyRef.current.length === 0) pushHistory();
     let raf = 0;
     const ro = new ResizeObserver(() => {
-      // Defer to next frame to avoid the benign
-      // "ResizeObserver loop completed with undelivered notifications" warning.
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => resizeCanvas());
     });
@@ -185,12 +247,11 @@ export const PaintApp = () => {
       ro.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [presetId]);
 
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      // Ignore shortcuts while typing in the text editor or any input.
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
 
@@ -210,16 +271,8 @@ export const PaintApp = () => {
         return;
       }
       const map: Record<string, Tool> = {
-        p: "pencil",
-        b: "brush",
-        e: "eraser",
-        f: "fill",
-        i: "picker",
-        r: "rectangle",
-        o: "circle",
-        l: "line",
-        g: "triangle",
-        t: "text",
+        p: "pencil", b: "brush", e: "eraser", f: "fill", i: "picker",
+        r: "rectangle", o: "circle", l: "line", g: "triangle", t: "text",
       };
       const t = map[e.key.toLowerCase()];
       if (t && !e.ctrlKey && !e.metaKey) setTool(t);
@@ -229,15 +282,11 @@ export const PaintApp = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [textEditor]);
 
-  // Auto-focus the text editor when it opens
   useEffect(() => {
     if (textEditor) {
       requestAnimationFrame(() => textInputRef.current?.focus());
     }
   }, [textEditor]);
-
-  const getCtx = () => canvasRef.current?.getContext("2d") ?? null;
-  const getPreviewCtx = () => previewRef.current?.getContext("2d") ?? null;
 
   const pushHistory = () => {
     const canvas = canvasRef.current;
@@ -252,10 +301,18 @@ export const PaintApp = () => {
     setCanRedo(false);
   };
 
+  // Restoring uses putImageData, which only works when the snapshot dimensions
+  // match the current canvas. If the user changed the preset, we just skip.
   const restoreFromHistory = () => {
+    const canvas = canvasRef.current;
     const ctx = getCtx();
     const data = historyRef.current[historyIndexRef.current];
-    if (!ctx || !data) return;
+    if (!canvas || !ctx || !data) return;
+    if (data.width !== canvas.width || data.height !== canvas.height) {
+      setCanUndo(historyIndexRef.current > 0);
+      setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+      return;
+    }
     const ratio = window.devicePixelRatio || 1;
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -284,22 +341,51 @@ export const PaintApp = () => {
     return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   };
 
-  const drawLine = (from: Point, to: Point) => {
+  // Smooth strokes: draw quadratic curves between midpoints of consecutive
+  // pointer samples. Combined with rAF batching this gives a native, low-lag
+  // feel even when the browser fires many events per frame.
+  const flushStroke = () => {
+    rafRef.current = null;
     const ctx = getCtx();
-    if (!ctx) return;
-    ctx.globalCompositeOperation = tool === "eraser" ? "destination-out" : "source-over";
-    ctx.strokeStyle = color;
-    ctx.lineWidth = tool === "pencil" ? Math.max(1, Math.round(size / 3)) : size;
-    ctx.beginPath();
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
-    ctx.stroke();
+    const points = pendingPointsRef.current;
+    if (!ctx || points.length === 0) return;
+    pendingPointsRef.current = [];
+
+    const t = toolRef.current;
+    ctx.globalCompositeOperation = t === "eraser" ? "destination-out" : "source-over";
+    ctx.strokeStyle = colorRef.current;
+    ctx.lineWidth = t === "pencil" ? Math.max(1, Math.round(sizeRef.current / 3)) : sizeRef.current;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    let prev = lastPointRef.current!;
+    let mid = midPointRef.current!;
+
+    for (const p of points) {
+      const newMid = { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 };
+      ctx.beginPath();
+      ctx.moveTo(mid.x, mid.y);
+      ctx.quadraticCurveTo(prev.x, prev.y, newMid.x, newMid.y);
+      ctx.stroke();
+      mid = newMid;
+      prev = p;
+    }
+
+    lastPointRef.current = prev;
+    midPointRef.current = mid;
+  };
+
+  const queuePoint = (p: Point) => {
+    pendingPointsRef.current.push(p);
+    if (rafRef.current == null) {
+      rafRef.current = requestAnimationFrame(flushStroke);
+    }
   };
 
   const configureShapeStroke = (ctx: CanvasRenderingContext2D) => {
     ctx.globalCompositeOperation = "source-over";
-    ctx.strokeStyle = color;
-    ctx.lineWidth = Math.max(1, size);
+    ctx.strokeStyle = colorRef.current;
+    ctx.lineWidth = Math.max(1, sizeRef.current);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
   };
@@ -355,7 +441,6 @@ export const PaintApp = () => {
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
   };
 
-  // Flood fill (4-way).
   const floodFill = (startX: number, startY: number, hex: string) => {
     const canvas = canvasRef.current;
     const ctx = getCtx();
@@ -427,7 +512,7 @@ export const PaintApp = () => {
     if (value.trim().length > 0) {
       ctx.save();
       ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = color;
+      ctx.fillStyle = colorRef.current;
       ctx.font = `${fontSize}px ${fontFamily}`;
       ctx.textBaseline = "top";
       const lines = value.split("\n");
@@ -446,10 +531,7 @@ export const PaintApp = () => {
     (e.target as Element).setPointerCapture(e.pointerId);
     const pos = getPos(e);
 
-    // If a text editor is open, commit it first when clicking elsewhere.
-    if (textEditor) {
-      commitText();
-    }
+    if (textEditor) commitText();
 
     if (tool === "fill") {
       floodFill(pos.x, pos.y, color);
@@ -470,17 +552,28 @@ export const PaintApp = () => {
       return;
     }
 
-    // Free-draw tools: pencil, brush, eraser
+    // Free-draw: paint an initial dot so single taps are visible.
     drawingRef.current = true;
     lastPointRef.current = pos;
-    drawLine(pos, pos);
+    midPointRef.current = pos;
+    pendingPointsRef.current = [];
+
+    const ctx = getCtx();
+    if (ctx) {
+      ctx.globalCompositeOperation = tool === "eraser" ? "destination-out" : "source-over";
+      ctx.fillStyle = color;
+      const r = (tool === "pencil" ? Math.max(1, Math.round(size / 3)) : size) / 2;
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (!drawingRef.current) return;
-    const pos = getPos(e);
 
     if (SHAPE_TOOLS.includes(tool) && shapeStartRef.current) {
+      const pos = getPos(e);
       const ctx = getPreviewCtx();
       if (!ctx) return;
       clearPreview();
@@ -488,19 +581,12 @@ export const PaintApp = () => {
       return;
     }
 
-    const last = lastPointRef.current ?? pos;
+    // Free-draw: collect coalesced events for accuracy, then flush on rAF.
     const events = (e.nativeEvent.getCoalescedEvents?.() ?? []) as PointerEvent[];
     if (events.length > 1) {
-      let prev = last;
-      for (const ev of events) {
-        const p = getPos(ev);
-        drawLine(prev, p);
-        prev = p;
-      }
-      lastPointRef.current = prev;
+      for (const ev of events) queuePoint(getPos(ev));
     } else {
-      drawLine(last, pos);
-      lastPointRef.current = pos;
+      queuePoint(getPos(e));
     }
   };
 
@@ -518,12 +604,20 @@ export const PaintApp = () => {
       return;
     }
 
+    // Flush any queued points synchronously so the snapshot includes them.
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+    if (pendingPointsRef.current.length) flushStroke();
+
     drawingRef.current = false;
     lastPointRef.current = null;
+    midPointRef.current = null;
     pushHistory();
   };
 
-  const clearCanvas = () => {
+  const wipeCanvas = () => {
     const canvas = canvasRef.current;
     const ctx = getCtx();
     if (!canvas || !ctx) return;
@@ -537,12 +631,27 @@ export const PaintApp = () => {
     pushHistory();
   };
 
-  const downloadPng = () => {
+  // Composite the drawing onto an opaque white background and download.
+  // JPEG has no alpha channel, so we always flatten to white before exporting
+  // — otherwise transparent pixels become black in some encoders.
+  const exportImage = (format: "png" | "jpg") => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    const out = document.createElement("canvas");
+    out.width = canvas.width;
+    out.height = canvas.height;
+    const ctx = out.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, out.width, out.height);
+    ctx.drawImage(canvas, 0, 0);
+
+    const mime = format === "png" ? "image/png" : "image/jpeg";
+    const ext = format === "png" ? "png" : "jpg";
+    const url = out.toDataURL(mime, format === "jpg" ? 0.92 : undefined);
     const link = document.createElement("a");
-    link.download = "painting.png";
-    link.href = canvas.toDataURL("image/png");
+    link.download = `painting.${ext}`;
+    link.href = url;
     link.click();
   };
 
@@ -556,12 +665,68 @@ export const PaintApp = () => {
       : "cursor-crosshair";
 
   const showTextOptions = tool === "text" || textEditor !== null;
+  const currentPreset = PRESETS.find((p) => p.id === presetId)!;
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
       {/* Top bar */}
       <header className="flex h-12 items-center justify-between border-b border-border bg-toolbar px-4 shadow-soft">
-        <h1 className="text-sm font-semibold tracking-tight">Paint</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-semibold tracking-tight">Paint</h1>
+          <div className="hidden items-center gap-1 sm:flex">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-8 gap-1.5 px-2 text-xs"
+                  onClick={() => setConfirmNew(true)}
+                >
+                  <FilePlus className="h-3.5 w-3.5" />
+                  New
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>New canvas</TooltipContent>
+            </Tooltip>
+
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs">
+                      <Maximize2 className="h-3.5 w-3.5" />
+                      <span className="max-w-[110px] truncate">{currentPreset.label}</span>
+                      <ChevronDown className="h-3 w-3 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Canvas size</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="start" className="w-52">
+                <DropdownMenuLabel>Canvas size</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {PRESETS.map((p) => (
+                  <DropdownMenuItem
+                    key={p.id}
+                    onSelect={() => setPresetId(p.id)}
+                    className={cn(
+                      "flex items-center justify-between text-xs",
+                      p.id === presetId && "bg-accent/10 text-accent",
+                    )}
+                  >
+                    <span>{p.label}</span>
+                    {p.id !== "fit" && (
+                      <span className="ml-2 text-[10px] tabular-nums text-muted-foreground">
+                        {p.width}×{p.height}
+                      </span>
+                    )}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+
         <div className="flex items-center gap-1">
           {showTextOptions && (
             <div className="mr-2 flex items-center gap-2">
@@ -609,25 +774,33 @@ export const PaintApp = () => {
                 <Redo2 className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Redo (⌘⇧Z)</TooltipContent>
+            <TooltipContent>Redo (⌘Y / ⌘⇧Z)</TooltipContent>
           </Tooltip>
           <div className="mx-2 h-5 w-px bg-border" />
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={clearCanvas} aria-label="Clear canvas">
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Clear</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon" onClick={downloadPng} aria-label="Download PNG">
-                <Download className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Download</TooltipContent>
-          </Tooltip>
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs">
+                    <Download className="h-3.5 w-3.5" />
+                    Export
+                    <ChevronDown className="h-3 w-3 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Export</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Download as</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => exportImage("png")} className="text-xs">
+                PNG image
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportImage("jpg")} className="text-xs">
+                JPG image
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
@@ -663,7 +836,6 @@ export const PaintApp = () => {
 
           <div className="my-2 h-px w-8 shrink-0 bg-border" />
 
-          {/* Size control (vertical) */}
           <div className="mt-1 flex shrink-0 flex-col items-center gap-2">
             <div
               className="rounded-full border border-border"
@@ -689,11 +861,19 @@ export const PaintApp = () => {
           </div>
         </aside>
 
-        {/* Canvas */}
-        <main className="flex flex-1 items-stretch justify-stretch bg-secondary p-4">
+        {/* Canvas area */}
+        <main className="flex flex-1 items-center justify-center overflow-auto bg-secondary p-4">
           <div
             ref={containerRef}
-            className="relative h-full w-full overflow-hidden rounded-lg border border-border bg-canvas shadow-panel"
+            className={cn(
+              "relative overflow-hidden rounded-lg border border-border bg-canvas shadow-panel",
+              presetId === "fit" ? "h-full w-full" : "shrink-0",
+            )}
+            style={
+              currentPreset.id === "fit"
+                ? undefined
+                : { width: currentPreset.width, height: currentPreset.height }
+            }
           >
             <canvas
               ref={canvasRef}
@@ -712,7 +892,6 @@ export const PaintApp = () => {
               onPointerLeave={() => endStroke()}
             />
 
-            {/* Floating text editor */}
             {textEditor && (
               <div
                 className="absolute z-10"
@@ -794,6 +973,28 @@ export const PaintApp = () => {
           {TOOLS.find((t) => t.id === tool)?.label}
         </div>
       </footer>
+
+      <AlertDialog open={confirmNew} onOpenChange={setConfirmNew}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Start a new canvas?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will clear your current drawing. This action can be undone with ⌘Z.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                wipeCanvas();
+                setConfirmNew(false);
+              }}
+            >
+              New canvas
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
