@@ -87,6 +87,7 @@ interface ToolBtn {
 }
 
 const TOOLS: ToolBtn[] = [
+  { id: "select", icon: MousePointer2, label: "Select", shortcut: "V" },
   { id: "pencil", icon: Pencil, label: "Pencil", shortcut: "P" },
   { id: "brush", icon: Brush, label: "Brush", shortcut: "B" },
   { id: "eraser", icon: Eraser, label: "Eraser", shortcut: "E" },
