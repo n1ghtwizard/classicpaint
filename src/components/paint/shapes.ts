@@ -14,9 +14,22 @@ import {
   ArrowLeft,
   ArrowUp,
   ArrowDown,
+  ArrowUpRight,
+  ArrowDownRight,
+  ArrowDownLeft,
+  ArrowUpLeft,
   MessageSquare,
+  MessageCircle,
   Diamond,
   Zap,
+  Plus,
+  Shapes,
+  Flag,
+  Moon,
+  Sun,
+  PieChart,
+  Equal,
+  CornerUpRight,
 } from "lucide-react";
 
 export type ShapeKind =
@@ -28,6 +41,8 @@ export type ShapeKind =
   | "triangle"
   | "right-triangle"
   | "diamond"
+  | "parallelogram"
+  | "trapezoid"
   | "pentagon"
   | "hexagon"
   | "octagon"
@@ -38,10 +53,24 @@ export type ShapeKind =
   | "arrow-left"
   | "arrow-up"
   | "arrow-down"
+  | "arrow-ne"
+  | "arrow-se"
+  | "arrow-sw"
+  | "arrow-nw"
+  | "double-arrow-h"
+  | "double-arrow-v"
   | "callout"
+  | "thought-bubble"
   | "heart"
   | "lightning"
-  | "cloud";
+  | "cloud"
+  | "moon"
+  | "sun"
+  | "cross"
+  | "pie"
+  | "chord"
+  | "banner"
+  | "chevron";
 
 export interface ShapeMeta {
   id: ShapeKind;
