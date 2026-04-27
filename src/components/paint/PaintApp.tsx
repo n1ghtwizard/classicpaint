@@ -18,6 +18,12 @@ import {
   Bold,
   Italic,
   Underline,
+  Highlighter,
+  PenTool,
+  PenLine,
+  Feather,
+  SprayCan,
+  Palette,
 } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
