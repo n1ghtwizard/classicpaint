@@ -2059,26 +2059,23 @@ export const PaintApp = () => {
       </div>
 
       {/* Bottom palette */}
-      <footer className="flex items-center gap-4 border-t border-border bg-toolbar px-4 py-3 shadow-soft">
+      <footer className="flex flex-wrap items-center gap-4 border-t border-border bg-toolbar px-4 py-3 shadow-soft">
         <div className="flex items-center gap-2">
           <span
             className="h-7 w-7 rounded-md border border-border shadow-soft"
             style={{ backgroundColor: color }}
             aria-label="Current color"
           />
-          <label className="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-tool-hover">
-            <Pipette className="h-3.5 w-3.5" />
-            <input
-              type="color"
-              value={color}
-              onChange={(e) => {
-                setColor(e.target.value);
-                if (activeShape) setActiveShape({ ...activeShape, color: e.target.value });
-              }}
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-              aria-label="Custom color"
-            />
-          </label>
+          <ColorPickerPopover
+            color={color}
+            onChange={(c) => {
+              setColor(c);
+              if (activeShape) setActiveShape({ ...activeShape, color: c });
+              if (polylineDraft) setPolylineDraft({ ...polylineDraft, color: c });
+            }}
+            customSlots={customSlots}
+            onSaveSlot={handleSlotSave}
+          />
         </div>
 
         <div className="mx-1 h-7 w-px bg-border" />
@@ -2092,6 +2089,7 @@ export const PaintApp = () => {
                 onClick={() => {
                   setColor(c);
                   if (activeShape) setActiveShape({ ...activeShape, color: c });
+                  if (polylineDraft) setPolylineDraft({ ...polylineDraft, color: c });
                 }}
                 className={cn(
                   "h-6 w-6 rounded-md border transition-transform hover:scale-110",
@@ -2102,6 +2100,28 @@ export const PaintApp = () => {
               />
             );
           })}
+        </div>
+
+        {/* 5 custom color slots */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Custom</span>
+          {customSlots.map((slot, i) => (
+            <button
+              key={i}
+              onClick={() => slot && setColor(slot)}
+              onContextMenu={(e) => { e.preventDefault(); handleSlotSave(i, color); }}
+              title={slot ? `${slot} (right-click to overwrite)` : "Empty — right-click to save current"}
+              className={cn(
+                "h-6 w-6 rounded-md border transition-transform hover:scale-110",
+                slot ? "border-border" : "border-dashed border-border bg-muted/40",
+                slot && slot.toLowerCase() === color.toLowerCase() && "ring-2 ring-tool-active/40",
+              )}
+              style={{ backgroundColor: slot || undefined }}
+              aria-label={slot ? `Custom slot ${i + 1}` : `Empty slot ${i + 1}`}
+            >
+              {!slot && <span className="text-[10px] text-muted-foreground">+</span>}
+            </button>
+          ))}
         </div>
 
         <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
