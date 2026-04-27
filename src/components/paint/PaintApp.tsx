@@ -1406,6 +1406,23 @@ export const PaintApp = () => {
         </div>
 
         <div className="flex items-center gap-1">
+          {tool === "crop" && (
+            <div className="mr-2 flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Aspect:</span>
+              <Select value={cropAspect} onValueChange={(v) => setCropAspect(v as CropAspect)}>
+                <SelectTrigger className="h-8 w-[110px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="free">Free</SelectItem>
+                  <SelectItem value="1:1">Square 1:1</SelectItem>
+                  <SelectItem value="4:3">4:3</SelectItem>
+                  <SelectItem value="16:9">16:9</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="mx-1 h-5 w-px bg-border" />
+            </div>
+          )}
           {showTextOptions && (
             <div className="mr-2 flex items-center gap-2">
               <Select value={fontFamily} onValueChange={setFontFamily}>
