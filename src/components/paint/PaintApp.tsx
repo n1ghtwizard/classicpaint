@@ -1412,6 +1412,9 @@ export const PaintApp = () => {
                     color,
                     fontSize: `${fontSize}px`,
                     fontFamily,
+                    fontWeight: textBold ? 700 : 400,
+                    fontStyle: textItalic ? "italic" : "normal",
+                    textDecoration: textUnderline ? "underline" : "none",
                     lineHeight: 1.2,
                   }}
                 />
