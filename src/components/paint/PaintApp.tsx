@@ -235,19 +235,24 @@ export const PaintApp = () => {
 
   const renderActiveShapeToPreview = useCallback(() => {
     const ctx = getPreviewCtx();
-    const shape = activeShapeRef.current;
     clearPreview();
-    if (!ctx || !shape) return;
-    renderShape(ctx, shape);
+    if (!ctx) return;
+    for (const s of placedShapesRef.current) renderShape(ctx, s);
+    const shape = activeShapeRef.current;
+    if (shape) renderShape(ctx, shape);
   }, [clearPreview]);
 
-  // Re-render the preview whenever the active shape or selection changes.
+  // Re-render the preview whenever the active shape, placed shapes, or
+  // selection changes.
   useEffect(() => {
+    const ctx = getPreviewCtx();
+    if (!ctx) return;
     clearPreview();
-    if (activeShape) renderShape(getPreviewCtx()!, activeShape);
+    for (const s of placedShapes) renderShape(ctx, s);
+    if (activeShape) renderShape(ctx, activeShape);
     if (selection) renderSelectionToPreview(selection);
     // marquee is drawn separately via overlay div
-  }, [activeShape, selection, clearPreview, renderSelectionToPreview]);
+  }, [activeShape, placedShapes, selection, clearPreview, renderSelectionToPreview]);
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
