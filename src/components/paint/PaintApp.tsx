@@ -1135,6 +1135,10 @@ export const PaintApp = () => {
   const currentPreset = PRESETS.find((p) => p.id === presetId)!;
   const currentShape = SHAPE_LOOKUP[shapeKind];
   const ShapeIcon = currentShape.icon;
+  const currentBrush =
+    BRUSHES.find((b) => b.id === tool) ?? BRUSHES.find((b) => b.id === lastBrush) ?? BRUSHES[0];
+  const BrushIcon = currentBrush.icon;
+  const isBrushActive = BRUSH_TOOLS.includes(tool) || tool === "eraser" || tool === "fill" || tool === "picker";
   const containerRect = containerRef.current?.getBoundingClientRect();
 
   return (
