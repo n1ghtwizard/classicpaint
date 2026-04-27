@@ -137,83 +137,88 @@ export interface DrawnShape {
   fill?: string | null;
 }
 
-// Build the shape's path inside a unit box [0,1] x [0,1].
-// The caller scales/rotates as needed. Returns null when nothing should be drawn.
-const unitPath = (kind: ShapeKind): Path2D | null => {
+// Build the shape's path scaled into a w×h box at origin (0,0).
+// The caller translates/rotates around the box center before calling.
+// Because we scale point-by-point (not via ctx.scale), strokes stay uniform.
+const buildPath = (kind: ShapeKind, w: number, h: number): Path2D | null => {
   const p = new Path2D();
+  const sx = (u: number) => u * w;
+  const sy = (v: number) => v * h;
+  const move = (u: number, v: number) => p.moveTo(sx(u), sy(v));
+  const line = (u: number, v: number) => p.lineTo(sx(u), sy(v));
+  const quad = (cu: number, cv: number, u: number, v: number) =>
+    p.quadraticCurveTo(sx(cu), sy(cv), sx(u), sy(v));
+  const bez = (
+    c1u: number, c1v: number, c2u: number, c2v: number, u: number, v: number,
+  ) => p.bezierCurveTo(sx(c1u), sy(c1v), sx(c2u), sy(c2v), sx(u), sy(v));
 
   switch (kind) {
     case "rectangle":
-      p.rect(0, 0, 1, 1);
+      p.rect(0, 0, w, h);
       return p;
     case "rounded-rectangle": {
-      const r = 0.15;
+      const r = Math.min(w, h) * 0.15;
       p.moveTo(r, 0);
-      p.lineTo(1 - r, 0);
-      p.quadraticCurveTo(1, 0, 1, r);
-      p.lineTo(1, 1 - r);
-      p.quadraticCurveTo(1, 1, 1 - r, 1);
-      p.lineTo(r, 1);
-      p.quadraticCurveTo(0, 1, 0, 1 - r);
+      p.lineTo(w - r, 0);
+      p.quadraticCurveTo(w, 0, w, r);
+      p.lineTo(w, h - r);
+      p.quadraticCurveTo(w, h, w - r, h);
+      p.lineTo(r, h);
+      p.quadraticCurveTo(0, h, 0, h - r);
       p.lineTo(0, r);
       p.quadraticCurveTo(0, 0, r, 0);
       p.closePath();
       return p;
     }
     case "ellipse":
-      p.ellipse(0.5, 0.5, 0.5, 0.5, 0, 0, Math.PI * 2);
+      p.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
       return p;
     case "triangle":
-      p.moveTo(0.5, 0);
-      p.lineTo(1, 1);
-      p.lineTo(0, 1);
-      p.closePath();
-      return p;
+      move(0.5, 0); line(1, 1); line(0, 1); p.closePath(); return p;
     case "right-triangle":
-      p.moveTo(0, 0);
-      p.lineTo(0, 1);
-      p.lineTo(1, 1);
-      p.closePath();
-      return p;
+      move(0, 0); line(0, 1); line(1, 1); p.closePath(); return p;
     case "diamond":
-      p.moveTo(0.5, 0);
-      p.lineTo(1, 0.5);
-      p.lineTo(0.5, 1);
-      p.lineTo(0, 0.5);
-      p.closePath();
-      return p;
+      move(0.5, 0); line(1, 0.5); line(0.5, 1); line(0, 0.5); p.closePath(); return p;
     case "pentagon":
-      return regularPolygon(5, -Math.PI / 2);
+      return regularPolygon(5, -Math.PI / 2, w, h);
     case "hexagon":
-      return regularPolygon(6, 0);
+      return regularPolygon(6, 0, w, h);
     case "octagon":
-      return regularPolygon(8, Math.PI / 8);
+      return regularPolygon(8, Math.PI / 8, w, h);
     case "star-4":
-      return star(4, -Math.PI / 2, 0.4);
+      return star(4, -Math.PI / 2, 0.4, w, h);
     case "star-5":
-      return star(5, -Math.PI / 2, 0.4);
+      return star(5, -Math.PI / 2, 0.4, w, h);
     case "star-6":
-      return star(6, -Math.PI / 2, 0.45);
+      return star(6, -Math.PI / 2, 0.45, w, h);
     case "arrow-right":
-      return arrow("right");
+      return arrow("right", w, h);
     case "arrow-left":
-      return arrow("left");
+      return arrow("left", w, h);
     case "arrow-up":
-      return arrow("up");
+      return arrow("up", w, h);
     case "arrow-down":
-      return arrow("down");
+      return arrow("down", w, h);
+    case "arrow-ne":
+    case "arrow-se":
+    case "arrow-sw":
+    case "arrow-nw":
+      return diagonalArrow(kind, w, h);
+    case "double-arrow-h":
+      return doubleArrow("horizontal", w, h);
+    case "double-arrow-v":
+      return doubleArrow("vertical", w, h);
     case "callout": {
-      const r = 0.12;
-      // Rounded rectangle (top portion) with a tail in the bottom-left corner.
-      const bottom = 0.78;
+      const r = Math.min(w, h) * 0.12;
+      const bottom = h * 0.78;
       p.moveTo(r, 0);
-      p.lineTo(1 - r, 0);
-      p.quadraticCurveTo(1, 0, 1, r);
-      p.lineTo(1, bottom - r);
-      p.quadraticCurveTo(1, bottom, 1 - r, bottom);
-      p.lineTo(0.4, bottom);
-      p.lineTo(0.2, 1);
-      p.lineTo(0.3, bottom);
+      p.lineTo(w - r, 0);
+      p.quadraticCurveTo(w, 0, w, r);
+      p.lineTo(w, bottom - r);
+      p.quadraticCurveTo(w, bottom, w - r, bottom);
+      p.lineTo(w * 0.4, bottom);
+      p.lineTo(w * 0.2, h);
+      p.lineTo(w * 0.3, bottom);
       p.lineTo(r, bottom);
       p.quadraticCurveTo(0, bottom, 0, bottom - r);
       p.lineTo(0, r);
@@ -221,95 +226,51 @@ const unitPath = (kind: ShapeKind): Path2D | null => {
       p.closePath();
       return p;
     }
-    case "heart": {
-      // Two arcs forming the lobes, then converge at the bottom point.
-      p.moveTo(0.5, 1);
-      p.bezierCurveTo(-0.1, 0.6, 0.1, -0.05, 0.5, 0.3);
-      p.bezierCurveTo(0.9, -0.05, 1.1, 0.6, 0.5, 1);
+    case "heart":
+      move(0.5, 1);
+      bez(-0.1, 0.6, 0.1, -0.05, 0.5, 0.3);
+      bez(0.9, -0.05, 1.1, 0.6, 0.5, 1);
       p.closePath();
       return p;
-    }
-    case "lightning": {
-      p.moveTo(0.55, 0);
-      p.lineTo(0.1, 0.55);
-      p.lineTo(0.45, 0.55);
-      p.lineTo(0.3, 1);
-      p.lineTo(0.85, 0.4);
-      p.lineTo(0.5, 0.4);
-      p.lineTo(0.7, 0);
+    case "lightning":
+      move(0.55, 0); line(0.1, 0.55); line(0.45, 0.55); line(0.3, 1);
+      line(0.85, 0.4); line(0.5, 0.4); line(0.7, 0); p.closePath(); return p;
+    case "cloud":
+      move(0.15, 0.85);
+      bez(-0.1, 0.85, -0.05, 0.45, 0.2, 0.45);
+      bez(0.18, 0.15, 0.55, 0.1, 0.6, 0.35);
+      bez(0.7, 0.1, 1.05, 0.25, 0.9, 0.5);
+      bez(1.15, 0.55, 1.05, 0.9, 0.85, 0.85);
       p.closePath();
       return p;
-    }
-    case "cloud": {
-      // Series of arcs along the top, flat-ish bottom.
-      p.moveTo(0.15, 0.85);
-      p.bezierCurveTo(-0.1, 0.85, -0.05, 0.45, 0.2, 0.45);
-      p.bezierCurveTo(0.18, 0.15, 0.55, 0.1, 0.6, 0.35);
-      p.bezierCurveTo(0.7, 0.1, 1.05, 0.25, 0.9, 0.5);
-      p.bezierCurveTo(1.15, 0.55, 1.05, 0.9, 0.85, 0.85);
-      p.closePath();
-      return p;
-    }
     case "parallelogram": {
       const skew = 0.25;
-      p.moveTo(skew, 0);
-      p.lineTo(1, 0);
-      p.lineTo(1 - skew, 1);
-      p.lineTo(0, 1);
-      p.closePath();
-      return p;
+      move(skew, 0); line(1, 0); line(1 - skew, 1); line(0, 1); p.closePath(); return p;
     }
     case "trapezoid": {
       const inset = 0.2;
-      p.moveTo(inset, 0);
-      p.lineTo(1 - inset, 0);
-      p.lineTo(1, 1);
-      p.lineTo(0, 1);
+      move(inset, 0); line(1 - inset, 0); line(1, 1); line(0, 1); p.closePath(); return p;
+    }
+    case "chevron":
+      move(0, 0); line(0.6, 0); line(1, 0.5); line(0.6, 1); line(0, 1); line(0.4, 0.5);
+      p.closePath(); return p;
+    case "thought-bubble":
+      p.ellipse(w * 0.5, h * 0.42, w * 0.45, h * 0.32, 0, 0, Math.PI * 2);
+      p.moveTo(w * 0.3, h * 0.82);
+      p.ellipse(w * 0.22, h * 0.82, w * 0.08, h * 0.06, 0, 0, Math.PI * 2);
+      p.moveTo(w * 0.16, h * 0.96);
+      p.ellipse(w * 0.12, h * 0.96, w * 0.045, h * 0.035, 0, 0, Math.PI * 2);
+      return p;
+    case "moon":
+      p.arc(w * 0.4, h * 0.5, Math.min(w, h) * 0.45, Math.PI * 0.5, Math.PI * 1.5, false);
+      p.arc(w * 0.55, h * 0.5, Math.min(w, h) * 0.4, Math.PI * 1.5, Math.PI * 0.5, true);
       p.closePath();
       return p;
-    }
-    case "arrow-ne":
-    case "arrow-se":
-    case "arrow-sw":
-    case "arrow-nw":
-      return diagonalArrow(kind);
-    case "double-arrow-h":
-      return doubleArrow("horizontal");
-    case "double-arrow-v":
-      return doubleArrow("vertical");
-    case "chevron": {
-      // Right-pointing chevron / block arrow segment.
-      p.moveTo(0, 0);
-      p.lineTo(0.6, 0);
-      p.lineTo(1, 0.5);
-      p.lineTo(0.6, 1);
-      p.lineTo(0, 1);
-      p.lineTo(0.4, 0.5);
-      p.closePath();
-      return p;
-    }
-    case "thought-bubble": {
-      // Main rounded body
-      p.ellipse(0.5, 0.42, 0.45, 0.32, 0, 0, Math.PI * 2);
-      // Two small bubbles in the bottom-left tail
-      p.moveTo(0.28, 0.85);
-      p.ellipse(0.22, 0.82, 0.08, 0.06, 0, 0, Math.PI * 2);
-      p.moveTo(0.16, 0.98);
-      p.ellipse(0.12, 0.96, 0.045, 0.035, 0, 0, Math.PI * 2);
-      return p;
-    }
-    case "moon": {
-      // Crescent: outer arc minus inner arc
-      p.arc(0.4, 0.5, 0.45, Math.PI * 0.5, Math.PI * 1.5, false);
-      p.arc(0.55, 0.5, 0.4, Math.PI * 1.5, Math.PI * 0.5, true);
-      p.closePath();
-      return p;
-    }
     case "sun": {
-      // Center disk + 8 triangular rays
-      const cx = 0.5, cy = 0.5;
-      const rIn = 0.22;
-      const rOut = 0.5;
+      const cx = w / 2, cy = h / 2;
+      const radius = Math.min(w, h) / 2;
+      const rIn = radius * 0.44;
+      const rOut = radius;
       const rays = 12;
       for (let i = 0; i < rays; i++) {
         const a1 = (i / rays) * Math.PI * 2;
@@ -327,81 +288,62 @@ const unitPath = (kind: ShapeKind): Path2D | null => {
         p.lineTo(x3, y3);
       }
       p.closePath();
-      // Inner disk
       p.moveTo(cx + rIn * 0.6, cy);
       p.arc(cx, cy, rIn * 0.6, 0, Math.PI * 2);
       return p;
     }
     case "cross": {
-      // Plus / Greek cross
-      const t = 0.32; // arm thickness ratio
+      const t = 0.32;
       const a = (1 - t) / 2;
       const b = a + t;
-      p.moveTo(a, 0);
-      p.lineTo(b, 0);
-      p.lineTo(b, a);
-      p.lineTo(1, a);
-      p.lineTo(1, b);
-      p.lineTo(b, b);
-      p.lineTo(b, 1);
-      p.lineTo(a, 1);
-      p.lineTo(a, b);
-      p.lineTo(0, b);
-      p.lineTo(0, a);
-      p.lineTo(a, a);
+      move(a, 0); line(b, 0); line(b, a); line(1, a); line(1, b); line(b, b);
+      line(b, 1); line(a, 1); line(a, b); line(0, b); line(0, a); line(a, a);
       p.closePath();
       return p;
     }
     case "pie": {
-      // 3/4 pie wedge
-      p.moveTo(0.5, 0.5);
-      p.lineTo(1, 0.5);
-      p.arc(0.5, 0.5, 0.5, 0, Math.PI * 1.5, false);
+      const cx = w / 2, cy = h / 2;
+      const r = Math.min(w, h) / 2;
+      p.moveTo(cx, cy);
+      p.lineTo(cx + r, cy);
+      p.arc(cx, cy, r, 0, Math.PI * 1.5, false);
       p.closePath();
       return p;
     }
     case "chord": {
-      // Circular arc closed with a straight chord
-      p.moveTo(1, 0.5);
-      p.arc(0.5, 0.5, 0.5, 0, Math.PI * 1.25, false);
+      const cx = w / 2, cy = h / 2;
+      const r = Math.min(w, h) / 2;
+      p.moveTo(cx + r, cy);
+      p.arc(cx, cy, r, 0, Math.PI * 1.25, false);
       p.closePath();
       return p;
     }
     case "banner": {
-      // Ribbon banner with notched ends
       const top = 0.25;
       const bot = 0.75;
       const notch = 0.08;
-      p.moveTo(0, top);
-      p.lineTo(0.15, top);
-      p.lineTo(0.15, top - 0.1);
-      p.lineTo(0.85, top - 0.1);
-      p.lineTo(0.85, top);
-      p.lineTo(1, top);
-      p.lineTo(1 - notch, 0.5);
-      p.lineTo(1, bot);
-      p.lineTo(0.85, bot);
-      p.lineTo(0.85, bot + 0.1);
-      p.lineTo(0.15, bot + 0.1);
-      p.lineTo(0.15, bot);
-      p.lineTo(0, bot);
-      p.lineTo(notch, 0.5);
+      move(0, top); line(0.15, top); line(0.15, top - 0.1);
+      line(0.85, top - 0.1); line(0.85, top); line(1, top);
+      line(1 - notch, 0.5); line(1, bot); line(0.85, bot);
+      line(0.85, bot + 0.1); line(0.15, bot + 0.1); line(0.15, bot);
+      line(0, bot); line(notch, 0.5);
       p.closePath();
       return p;
     }
     case "line":
     case "diagonal-line":
-      // Lines are handled separately because they don't fit the unit-box model.
       return null;
   }
 };
 
-function regularPolygon(sides: number, rotation: number): Path2D {
+function regularPolygon(sides: number, rotation: number, w: number, h: number): Path2D {
   const p = new Path2D();
+  const cx = w / 2, cy = h / 2;
+  const rx = w / 2, ry = h / 2;
   for (let i = 0; i < sides; i++) {
     const a = rotation + (i * Math.PI * 2) / sides;
-    const x = 0.5 + Math.cos(a) * 0.5;
-    const y = 0.5 + Math.sin(a) * 0.5;
+    const x = cx + Math.cos(a) * rx;
+    const y = cy + Math.sin(a) * ry;
     if (i === 0) p.moveTo(x, y);
     else p.lineTo(x, y);
   }
@@ -409,14 +351,16 @@ function regularPolygon(sides: number, rotation: number): Path2D {
   return p;
 }
 
-function star(points: number, rotation: number, innerRatio: number): Path2D {
+function star(points: number, rotation: number, innerRatio: number, w: number, h: number): Path2D {
   const p = new Path2D();
+  const cx = w / 2, cy = h / 2;
+  const rx = w / 2, ry = h / 2;
   const total = points * 2;
   for (let i = 0; i < total; i++) {
     const a = rotation + (i * Math.PI) / points;
-    const r = i % 2 === 0 ? 0.5 : 0.5 * innerRatio;
-    const x = 0.5 + Math.cos(a) * r;
-    const y = 0.5 + Math.sin(a) * r;
+    const r = i % 2 === 0 ? 1 : innerRatio;
+    const x = cx + Math.cos(a) * rx * r;
+    const y = cy + Math.sin(a) * ry * r;
     if (i === 0) p.moveTo(x, y);
     else p.lineTo(x, y);
   }
@@ -424,18 +368,11 @@ function star(points: number, rotation: number, innerRatio: number): Path2D {
   return p;
 }
 
-function arrow(direction: "right" | "left" | "up" | "down"): Path2D {
-  // Default: right-pointing arrow inside unit box.
-  // Body height = 0.5 (centered), head extends from x=0.6 to x=1.
+function arrow(direction: "right" | "left" | "up" | "down", w: number, h: number): Path2D {
   const p = new Path2D();
   const pts: [number, number][] = [
-    [0, 0.3],
-    [0.6, 0.3],
-    [0.6, 0.05],
-    [1, 0.5],
-    [0.6, 0.95],
-    [0.6, 0.7],
-    [0, 0.7],
+    [0, 0.3], [0.6, 0.3], [0.6, 0.05], [1, 0.5],
+    [0.6, 0.95], [0.6, 0.7], [0, 0.7],
   ];
   const transform = (x: number, y: number): [number, number] => {
     switch (direction) {
@@ -447,18 +384,15 @@ function arrow(direction: "right" | "left" | "up" | "down"): Path2D {
   };
   pts.forEach(([x, y], i) => {
     const [tx, ty] = transform(x, y);
-    if (i === 0) p.moveTo(tx, ty);
-    else p.lineTo(tx, ty);
+    if (i === 0) p.moveTo(tx * w, ty * h);
+    else p.lineTo(tx * w, ty * h);
   });
   p.closePath();
   return p;
 }
 
-function diagonalArrow(kind: "arrow-ne" | "arrow-se" | "arrow-sw" | "arrow-nw"): Path2D {
-  // Build a NE arrow inside the unit box, then mirror as needed.
-  // Shaft from bottom-left to roughly (0.7, 0.3); arrowhead at top-right.
+function diagonalArrow(kind: "arrow-ne" | "arrow-se" | "arrow-sw" | "arrow-nw", w: number, h: number): Path2D {
   const p = new Path2D();
-  // NE base polygon points
   const pts: [number, number][] = [
     [0, 0.7], [0.5, 0.2], [0.35, 0.05], [0.95, 0.05],
     [0.95, 0.65], [0.8, 0.5], [0.3, 1],
@@ -473,42 +407,33 @@ function diagonalArrow(kind: "arrow-ne" | "arrow-se" | "arrow-sw" | "arrow-nw"):
   };
   pts.forEach(([x, y], i) => {
     const [tx, ty] = transform(x, y);
-    if (i === 0) p.moveTo(tx, ty);
-    else p.lineTo(tx, ty);
+    if (i === 0) p.moveTo(tx * w, ty * h);
+    else p.lineTo(tx * w, ty * h);
   });
   p.closePath();
   return p;
 }
 
-function doubleArrow(orientation: "horizontal" | "vertical"): Path2D {
-  // Horizontal: arrowheads on both left and right.
+function doubleArrow(orientation: "horizontal" | "vertical", w: number, h: number): Path2D {
   const p = new Path2D();
   const pts: [number, number][] = [
-    [0, 0.5],
-    [0.15, 0.2],
-    [0.15, 0.38],
-    [0.85, 0.38],
-    [0.85, 0.2],
-    [1, 0.5],
-    [0.85, 0.8],
-    [0.85, 0.62],
-    [0.15, 0.62],
-    [0.15, 0.8],
+    [0, 0.5], [0.15, 0.2], [0.15, 0.38], [0.85, 0.38],
+    [0.85, 0.2], [1, 0.5], [0.85, 0.8], [0.85, 0.62],
+    [0.15, 0.62], [0.15, 0.8],
   ];
   const transform = (x: number, y: number): [number, number] =>
     orientation === "horizontal" ? [x, y] : [y, x];
   pts.forEach(([x, y], i) => {
     const [tx, ty] = transform(x, y);
-    if (i === 0) p.moveTo(tx, ty);
-    else p.lineTo(tx, ty);
+    if (i === 0) p.moveTo(tx * w, ty * h);
+    else p.lineTo(tx * w, ty * h);
   });
   p.closePath();
   return p;
 }
 
-// Render a shape onto a 2D context at its bbox/rotation.
-// startPoint and endPoint are only used for line shapes (which don't fit the
-// bounding-box model nicely when rotated).
+// Render a shape onto a 2D context. Stroke width is applied in screen pixels
+// (no ctx.scale of strokes), so all edges have uniform thickness.
 export function renderShape(
   ctx: CanvasRenderingContext2D,
   shape: DrawnShape,
@@ -523,7 +448,6 @@ export function renderShape(
   ctx.lineJoin = "round";
 
   if (shape.kind === "line" || shape.kind === "diagonal-line") {
-    // Use start/end if provided, otherwise derive from bbox + rotation.
     let a = start;
     let b = end;
     if (!a || !b) {
@@ -533,7 +457,6 @@ export function renderShape(
       const sin = Math.sin(shape.rotation);
       const halfW = shape.w / 2;
       const halfH = shape.h / 2;
-      // Use the bbox's diagonal as the line direction.
       const localA = { x: -halfW, y: -halfH };
       const localB = { x: halfW, y: halfH };
       a = {
@@ -553,7 +476,7 @@ export function renderShape(
     return;
   }
 
-  const path = unitPath(shape.kind);
+  const path = buildPath(shape.kind, shape.w, shape.h);
   if (!path) {
     ctx.restore();
     return;
@@ -564,11 +487,6 @@ export function renderShape(
   ctx.translate(cx, cy);
   ctx.rotate(shape.rotation);
   ctx.translate(-shape.w / 2, -shape.h / 2);
-  ctx.scale(shape.w, shape.h);
-
-  // Strokes get scaled by the transform; counter-scale the line width so it
-  // stays visually consistent regardless of the shape's size.
-  ctx.lineWidth = Math.max(1, shape.strokeWidth) / Math.max(0.0001, Math.min(shape.w, shape.h));
 
   if (shape.fill) {
     ctx.fillStyle = shape.fill;
