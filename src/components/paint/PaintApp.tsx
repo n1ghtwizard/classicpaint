@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Pencil,
   Brush,
@@ -24,6 +25,12 @@ import {
   Feather,
   SprayCan,
   Palette,
+  Crop,
+  Spline,
+  LogIn,
+  LogOut,
+  Save,
+  User as UserIcon,
 } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
@@ -43,6 +50,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -56,11 +66,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
+import jsPDF from "jspdf";
 
 import { SHAPES, SHAPE_LOOKUP, renderShape, type DrawnShape, type ShapeKind } from "./shapes";
 import { ShapeTransformer } from "./ShapeTransformer";
 import { SelectionLayer, type FloatingSelection } from "./SelectionLayer";
 import { useTheme } from "./useTheme";
+import { CropOverlay, type CropAspect } from "./CropOverlay";
+import { PolylineEditor, renderPolyline, type PolylineDraft } from "./PolylineEditor";
+import { ColorPickerPopover } from "./ColorPickerPopover";
+import { SaveLoadDialog } from "./SaveLoadDialog";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Tool =
   | "select"
