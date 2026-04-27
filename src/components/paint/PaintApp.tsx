@@ -1185,18 +1185,145 @@ export const PaintApp = () => {
     return out;
   };
 
-  const exportImage = (format: "png" | "jpg") => {
+  const exportImage = (format: "png" | "jpg" | "webp" | "pdf") => {
     if (activeShapeRef.current) commitActiveShape();
     if (selectionRef.current) commitSelection();
     const out = flattenToCanvas();
     if (!out) return;
-    const mime = format === "png" ? "image/png" : "image/jpeg";
-    const ext = format === "png" ? "png" : "jpg";
-    const url = out.toDataURL(mime, format === "jpg" ? 0.92 : undefined);
+    if (format === "pdf") {
+      const ratio = window.devicePixelRatio || 1;
+      const wPx = out.width / ratio;
+      const hPx = out.height / ratio;
+      const orientation = wPx >= hPx ? "landscape" : "portrait";
+      const pdf = new jsPDF({ orientation, unit: "px", format: [wPx, hPx] });
+      const dataUrl = out.toDataURL("image/png");
+      pdf.addImage(dataUrl, "PNG", 0, 0, wPx, hPx);
+      pdf.save("painting.pdf");
+      return;
+    }
+    const mimeMap = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" } as const;
+    const mime = mimeMap[format];
+    const ext = format;
+    const quality = format === "png" ? undefined : 0.92;
+    const url = out.toDataURL(mime, quality);
     const link = document.createElement("a");
     link.download = `painting.${ext}`;
     link.href = url;
     link.click();
+  };
+
+  // Apply a crop rectangle (in CSS pixels) to the bitmap canvas.
+  const applyCrop = (rect: { x: number; y: number; w: number; h: number }) => {
+    const canvas = canvasRef.current;
+    const ctx = getCtx();
+    if (!canvas || !ctx) return;
+    if (placedShapesRef.current.length > 0) {
+      ctx.save();
+      for (const s of placedShapesRef.current) renderShape(ctx, s);
+      ctx.restore();
+      setPlacedShapes([]);
+    }
+    if (selectionRef.current) commitSelection();
+    const ratio = window.devicePixelRatio || 1;
+    const px = Math.max(0, Math.round(rect.x * ratio));
+    const py = Math.max(0, Math.round(rect.y * ratio));
+    const pw = Math.min(canvas.width - px, Math.round(rect.w * ratio));
+    const ph = Math.min(canvas.height - py, Math.round(rect.h * ratio));
+    if (pw <= 0 || ph <= 0) return;
+
+    const tmp = document.createElement("canvas");
+    tmp.width = pw;
+    tmp.height = ph;
+    const tctx = tmp.getContext("2d");
+    if (!tctx) return;
+    tctx.drawImage(canvas, px, py, pw, ph, 0, 0, pw, ph);
+
+    canvas.width = pw;
+    canvas.height = ph;
+    canvas.style.width = `${rect.w}px`;
+    canvas.style.height = `${rect.h}px`;
+    const preview = previewRef.current;
+    if (preview) {
+      preview.width = pw;
+      preview.height = ph;
+      preview.style.width = `${rect.w}px`;
+      preview.style.height = `${rect.h}px`;
+      const pctx = preview.getContext("2d");
+      if (pctx) pctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
+    const newCtx = canvas.getContext("2d");
+    if (!newCtx) return;
+    newCtx.fillStyle = "#ffffff";
+    newCtx.fillRect(0, 0, pw, ph);
+    newCtx.drawImage(tmp, 0, 0);
+    newCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    newCtx.lineCap = "round";
+    newCtx.lineJoin = "round";
+    setPresetId("fit");
+    pushHistory();
+    setTool("select");
+    toast.success("Cropped");
+  };
+
+  const commitPolyline = (draft: PolylineDraft) => {
+    const ctx = getCtx();
+    if (ctx && draft.points.length >= 2) {
+      renderPolyline(ctx, draft);
+      pushHistory();
+    }
+    setPolylineDraft(null);
+    setTool("pencil");
+  };
+
+  const loadImageIntoCanvas = (img: HTMLImageElement) => {
+    const canvas = canvasRef.current;
+    const preview = previewRef.current;
+    if (!canvas || !preview) return;
+    setActiveShape(null);
+    setSelection(null);
+    setPlacedShapes([]);
+    setPolylineDraft(null);
+    clearPreview();
+    const ratio = window.devicePixelRatio || 1;
+    const cssW = img.naturalWidth;
+    const cssH = img.naturalHeight;
+    canvas.width = Math.floor(cssW * ratio);
+    canvas.height = Math.floor(cssH * ratio);
+    canvas.style.width = `${cssW}px`;
+    canvas.style.height = `${cssH}px`;
+    preview.width = canvas.width;
+    preview.height = canvas.height;
+    preview.style.width = `${cssW}px`;
+    preview.style.height = `${cssH}px`;
+    const ctx = canvas.getContext("2d");
+    const pctx = preview.getContext("2d");
+    if (!ctx || !pctx) return;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    pctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    setPresetId("fit");
+    pushHistory();
+    toast.success("Painting loaded");
+  };
+
+  const getPngBlob = async (): Promise<Blob | null> => {
+    if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
+    const out = flattenToCanvas();
+    if (!out) return null;
+    return await new Promise((res) => out.toBlob((b) => res(b), "image/png"));
+  };
+
+  const handleSlotSave = (idx: number, hex: string) => {
+    setCustomSlots((prev) => {
+      const next = prev.slice();
+      next[Math.max(0, Math.min(4, idx))] = hex;
+      return next;
+    });
   };
 
   const cursorClass =
