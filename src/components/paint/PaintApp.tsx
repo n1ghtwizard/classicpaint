@@ -1964,7 +1964,31 @@ export const PaintApp = () => {
               />
             )}
 
-            {/* In-progress marquee rectangle (selection tool, while dragging) */}
+            {/* Crop overlay */}
+            {tool === "crop" && containerRect && (
+              <CropOverlay
+                cssWidth={containerRect.width}
+                cssHeight={containerRect.height}
+                aspect={cropAspect}
+                onCancel={() => setTool("select")}
+                onConfirm={applyCrop}
+              />
+            )}
+
+            {/* Polyline (bendable line) editor */}
+            {tool === "polyline" && polylineDraft && (
+              <PolylineEditor
+                draft={polylineDraft}
+                cssWidth={containerRect?.width ?? 0}
+                cssHeight={containerRect?.height ?? 0}
+                onChange={setPolylineDraft}
+                onCancel={() => {
+                  setPolylineDraft(null);
+                  setTool("pencil");
+                }}
+                onCommit={commitPolyline}
+              />
+            )}
             {marquee && (
               <div
                 className="pointer-events-none absolute z-20 border border-dashed border-tool-active/80 bg-tool-active/10"
