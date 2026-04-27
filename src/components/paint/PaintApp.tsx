@@ -1760,6 +1760,90 @@ export const PaintApp = () => {
             </TooltipContent>
           </Tooltip>
 
+          {/* Bendable / multi-point lines */}
+          <Popover>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    className={cn(
+                      "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
+                      tool === "polyline"
+                        ? "bg-tool-active text-accent-foreground"
+                        : "text-foreground hover:bg-tool-hover",
+                    )}
+                    aria-label="Bendable lines"
+                    aria-pressed={tool === "polyline"}
+                  >
+                    <Spline className="h-[18px] w-[18px]" />
+                    <ChevronDown className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5 opacity-70" />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="right">Bendable lines</TooltipContent>
+            </Tooltip>
+            <PopoverContent side="right" align="start" className="w-[220px] p-2">
+              <div className="mb-2 px-1 text-[11px] font-medium text-muted-foreground">
+                Lines &amp; curves — pick one, then click on the canvas to drop each point
+              </div>
+              <div className="space-y-1">
+                {POLYLINE_KINDS.map((k) => (
+                  <button
+                    key={k.id}
+                    onClick={() => {
+                      if (activeShapeRef.current) commitActiveShape();
+                      if (selectionRef.current) commitSelection();
+                      setPolylineKind(k.id);
+                      setPolylineDraft({
+                        pointCount: k.points,
+                        curved: k.curved,
+                        color,
+                        strokeWidth: size,
+                        points: [],
+                      });
+                      setTool("polyline");
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors",
+                      polylineKind === k.id && tool === "polyline"
+                        ? "bg-tool-active text-accent-foreground"
+                        : "hover:bg-tool-hover",
+                    )}
+                  >
+                    <span>{k.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {k.curved ? "curved" : "straight"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Crop tool */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => {
+                  if (activeShapeRef.current) commitActiveShape();
+                  if (selectionRef.current) commitSelection();
+                  setTool("crop");
+                }}
+                className={cn(
+                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
+                  tool === "crop"
+                    ? "bg-tool-active text-accent-foreground"
+                    : "text-foreground hover:bg-tool-hover",
+                )}
+                aria-label="Crop"
+                aria-pressed={tool === "crop"}
+              >
+                <Crop className="h-[18px] w-[18px]" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Crop canvas</TooltipContent>
+          </Tooltip>
+
           <div className="my-2 h-px w-8 shrink-0 bg-border" />
 
           <div className="mt-1 flex shrink-0 flex-col items-center gap-2">
