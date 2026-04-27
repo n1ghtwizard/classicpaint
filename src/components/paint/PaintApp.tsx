@@ -93,7 +93,23 @@ type Tool =
   | "fill"
   | "picker"
   | "shape"
-  | "text";
+  | "text"
+  | "crop"
+  | "polyline";
+
+// 2/3/4/5 point lines, straight or curved.
+type PolylineKind = "polyline-2" | "polyline-3" | "polyline-4" | "polyline-5"
+  | "curve-2" | "curve-3" | "curve-4" | "curve-5";
+const POLYLINE_KINDS: { id: PolylineKind; label: string; points: number; curved: boolean }[] = [
+  { id: "polyline-2", label: "Line (2 pts)",   points: 2, curved: false },
+  { id: "polyline-3", label: "Line (3 pts)",   points: 3, curved: false },
+  { id: "polyline-4", label: "Line (4 pts)",   points: 4, curved: false },
+  { id: "polyline-5", label: "Line (5 pts)",   points: 5, curved: false },
+  { id: "curve-2",    label: "Curve (2 pts)",  points: 2, curved: true  },
+  { id: "curve-3",    label: "Curve (3 pts)",  points: 3, curved: true  },
+  { id: "curve-4",    label: "Curve (4 pts)",  points: 4, curved: true  },
+  { id: "curve-5",    label: "Curve (5 pts)",  points: 5, curved: true  },
+];
 
 // Tools that paint freehand strokes on the bitmap canvas.
 const BRUSH_TOOLS: Tool[] = [
