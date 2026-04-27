@@ -1490,6 +1490,44 @@ export const PaintApp = () => {
             </TooltipTrigger>
             <TooltipContent>{theme === "dark" ? "Light mode" : "Dark mode"}</TooltipContent>
           </Tooltip>
+          {user ? (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs">
+                      <UserIcon className="h-3.5 w-3.5" />
+                      <span className="max-w-[80px] truncate">
+                        {user.user_metadata?.display_name ?? user.email?.split("@")[0]}
+                      </span>
+                      <ChevronDown className="h-3 w-3 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Account</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setSaveDialogOpen(true)} className="text-xs">
+                  <Save className="mr-2 h-3 w-3" /> My paintings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => signOut()} className="text-xs">
+                  <LogOut className="mr-2 h-3 w-3" /> Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" asChild>
+                  <Link to="/auth">
+                    <LogIn className="h-3.5 w-3.5" /> Sign in
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Sign in to save</TooltipContent>
+            </Tooltip>
+          )}
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1511,6 +1549,12 @@ export const PaintApp = () => {
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => exportImage("jpg")} className="text-xs">
                 JPG image
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportImage("webp")} className="text-xs">
+                WebP image
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportImage("pdf")} className="text-xs">
+                PDF document
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
