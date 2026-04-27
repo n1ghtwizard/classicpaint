@@ -1343,8 +1343,40 @@ export const PaintApp = () => {
               onPointerMove={onPointerMove}
               onPointerUp={endStroke}
               onPointerCancel={() => endStroke()}
-              onPointerLeave={() => endStroke()}
+              onPointerLeave={() => {
+                endStroke();
+                setHoverPos(null);
+              }}
+              onDoubleClick={onCanvasDoubleClick}
             />
+
+            {/* Ghost cursor: shown when about to place a shape or text box,
+                so the user knows exactly where the object will land. */}
+            {hoverPos && (tool === "shape" || tool === "text") && !activeShape && !drawingRef.current && (
+              <div
+                className="pointer-events-none absolute z-10"
+                style={{ left: hoverPos.x, top: hoverPos.y }}
+              >
+                {tool === "text" ? (
+                  <div
+                    className="absolute"
+                    style={{
+                      left: 0,
+                      top: 0,
+                      width: 1,
+                      height: Math.max(12, fontSize),
+                      background: "hsl(var(--tool-active))",
+                      animation: "pulse 1s ease-in-out infinite",
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="absolute -translate-x-1/2 -translate-y-1/2 rounded-sm border border-dashed border-tool-active/70 bg-tool-active/10"
+                    style={{ width: 24, height: 24 }}
+                  />
+                )}
+              </div>
+            )}
 
             {/* Shape transformer overlay — shown only after a shape is drawn,
                 while the user is still adjusting it. */}
