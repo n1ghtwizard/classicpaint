@@ -188,9 +188,13 @@ export const PaintApp = () => {
 
   const textInputRef = useRef<HTMLTextAreaElement>(null);
 
-  const [tool, setTool] = useState<Tool>("pencil");
+  const [tool, setTool] = useState<Tool>("select");
   const [shapeKind, setShapeKind] = useState<ShapeKind>("rectangle");
   const [shapesMenuOpen, setShapesMenuOpen] = useState(false);
+  const [brushesMenuOpen, setBrushesMenuOpen] = useState(false);
+  // Last brush picked from the brushes dropdown — used for the dropdown's
+  // current icon and quick re-selection.
+  const [lastBrush, setLastBrush] = useState<Tool>("pencil");
   const [color, setColor] = useState("#000000");
   const [size, setSize] = useState(6);
   const [canUndo, setCanUndo] = useState(false);
