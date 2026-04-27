@@ -836,6 +836,7 @@ export const PaintApp = () => {
     if (!canvas || !ctx) return;
     setActiveShape(null);
     setSelection(null);
+    setPlacedShapes([]);
     clearPreview();
     const ratio = window.devicePixelRatio || 1;
     ctx.save();
@@ -847,21 +848,31 @@ export const PaintApp = () => {
     pushHistory();
   };
 
-  const exportImage = (format: "png" | "jpg") => {
-    // Make sure pending overlays are baked in before exporting.
-    if (activeShapeRef.current) commitActiveShape();
-    if (selectionRef.current) commitSelection();
+  // Composite the bitmap canvas + all placed/active shapes + selection into
+  // a single canvas. Used by export and by paste/selection operations.
+  const flattenToCanvas = (): HTMLCanvasElement | null => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return null;
     const out = document.createElement("canvas");
     out.width = canvas.width;
     out.height = canvas.height;
     const ctx = out.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) return null;
+    const ratio = window.devicePixelRatio || 1;
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, out.width, out.height);
     ctx.drawImage(canvas, 0, 0);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    for (const s of placedShapesRef.current) renderShape(ctx, s);
+    if (activeShapeRef.current) renderShape(ctx, activeShapeRef.current);
+    return out;
+  };
 
+  const exportImage = (format: "png" | "jpg") => {
+    if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
+    const out = flattenToCanvas();
+    if (!out) return;
     const mime = format === "png" ? "image/png" : "image/jpeg";
     const ext = format === "png" ? "png" : "jpg";
     const url = out.toDataURL(mime, format === "jpg" ? 0.92 : undefined);
