@@ -325,19 +325,19 @@ export const PaintApp = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetId]);
 
-  // Commit the current shape to the main canvas and clear the overlay.
+  // Commit the current shape — moves it from the editing slot into the
+  // placedShapes list (still vector / re-editable). Switches the tool back
+  // to pencil so adding more shapes requires re-opening the shapes menu.
   const commitActiveShape = useCallback(() => {
     const shape = activeShapeRef.current;
-    const ctx = getCtx();
-    if (!shape || !ctx) {
+    if (!shape) {
       setActiveShape(null);
       return;
     }
-    renderShape(ctx, shape);
+    setPlacedShapes((prev) => [...prev, shape]);
     setActiveShape(null);
-    clearPreview();
-    pushHistory();
-  }, [clearPreview]);
+    setTool("pencil");
+  }, []);
 
   // Stamp the floating selection back onto the main canvas at its current
   // position, then clear the floating layer.
@@ -360,32 +360,6 @@ export const PaintApp = () => {
     clearPreview();
     pushHistory();
   }, [clearPreview]);
-
-  // Place a default-sized shape in the center of the visible canvas, ready
-  // for the user to drag/resize via the transformer overlay.
-  const placeShapeAtCenter = useCallback((kind: ShapeKind) => {
-    if (activeShapeRef.current) commitActiveShape();
-    if (selectionRef.current) commitSelection();
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ratio = window.devicePixelRatio || 1;
-    const cssW = canvas.width / ratio;
-    const cssH = canvas.height / ratio;
-    const isLine = kind === "line" || kind === "diagonal-line";
-    const w = Math.min(240, cssW * 0.4);
-    const h = isLine ? w : Math.min(180, cssH * 0.35);
-    setActiveShape({
-      kind,
-      x: (cssW - w) / 2,
-      y: (cssH - h) / 2,
-      w,
-      h,
-      rotation: 0,
-      color: colorRef.current,
-      strokeWidth: sizeRef.current,
-      fill: null,
-    });
-  }, [commitActiveShape, commitSelection]);
 
   // Keyboard shortcuts
   useEffect(() => {
