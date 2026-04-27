@@ -1100,6 +1100,33 @@ export const PaintApp = () => {
                   ))}
                 </SelectContent>
               </Select>
+              <Toggle
+                size="sm"
+                pressed={textBold}
+                onPressedChange={setTextBold}
+                aria-label="Bold"
+                className="h-8 w-8 p-0 data-[state=on]:bg-tool-active data-[state=on]:text-accent-foreground"
+              >
+                <Bold className="h-3.5 w-3.5" />
+              </Toggle>
+              <Toggle
+                size="sm"
+                pressed={textItalic}
+                onPressedChange={setTextItalic}
+                aria-label="Italic"
+                className="h-8 w-8 p-0 data-[state=on]:bg-tool-active data-[state=on]:text-accent-foreground"
+              >
+                <Italic className="h-3.5 w-3.5" />
+              </Toggle>
+              <Toggle
+                size="sm"
+                pressed={textUnderline}
+                onPressedChange={setTextUnderline}
+                aria-label="Underline"
+                className="h-8 w-8 p-0 data-[state=on]:bg-tool-active data-[state=on]:text-accent-foreground"
+              >
+                <Underline className="h-3.5 w-3.5" />
+              </Toggle>
               <div className="mx-1 h-5 w-px bg-border" />
             </div>
           )}
