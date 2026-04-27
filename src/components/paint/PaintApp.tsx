@@ -1747,7 +1747,13 @@ export const PaintApp = () => {
               Drag a rectangle to lift a region as a floating layer
             </span>
           )}
-          <span>{tool === "shape" ? `Shape: ${currentShape.label}` : TOOLS.find((t) => t.id === tool)?.label}</span>
+          <span>
+            {tool === "shape"
+              ? `Shape: ${currentShape.label}`
+              : TOOLS.find((t) => t.id === tool)?.label
+                ?? BRUSHES.find((b) => b.id === tool)?.label
+                ?? (tool === "text" ? "Text" : tool)}
+          </span>
         </div>
       </footer>
 
