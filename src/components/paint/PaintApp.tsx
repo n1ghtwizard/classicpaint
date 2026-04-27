@@ -573,9 +573,10 @@ export const PaintApp = () => {
     let lineWidth = baseSize;
     if (t === "pencil") lineWidth = Math.max(1, Math.round(baseSize / 3));
     if (t === "marker") {
+      // Opaque chunky stroke — translucency caused visible striping where
+      // adjacent quadratic segments overlap between flushes.
       lineWidth = baseSize * 1.4;
-      ctx.globalAlpha = 0.35;
-      ctx.lineCap = "square";
+      ctx.lineCap = "round";
     }
     if (t === "ink") {
       lineWidth = Math.max(1, baseSize * 0.7);
@@ -968,12 +969,30 @@ export const PaintApp = () => {
 
     const ctx = getCtx();
     if (ctx) {
+      ctx.save();
       ctx.globalCompositeOperation = tool === "eraser" ? "destination-out" : "source-over";
       ctx.fillStyle = color;
-      const r = (tool === "pencil" ? Math.max(1, Math.round(size / 3)) : size) / 2;
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
-      ctx.fill();
+      if (tool === "spray") {
+        // No fat starter dot — emit a small spray burst instead.
+        const radius = size;
+        const density = Math.max(6, Math.round(size * 1.2));
+        for (let i = 0; i < density; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = Math.random() * radius;
+          ctx.beginPath();
+          ctx.arc(pos.x + Math.cos(a) * r, pos.y + Math.sin(a) * r, 0.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (tool === "watercolor" || tool === "crayon" || tool === "marker") {
+        // Skip the solid starter dot for textured / translucent brushes —
+        // it shows up as an obvious blob before the stroke begins.
+      } else {
+        const r = (tool === "pencil" ? Math.max(1, Math.round(size / 3)) : size) / 2;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
     }
   };
 
