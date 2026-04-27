@@ -2171,6 +2171,13 @@ export const PaintApp = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <SaveLoadDialog
+        open={saveDialogOpen}
+        onOpenChange={setSaveDialogOpen}
+        getPngBlob={getPngBlob}
+        onLoad={loadImageIntoCanvas}
+      />
     </div>
   );
 };
