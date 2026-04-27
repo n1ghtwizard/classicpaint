@@ -42,11 +42,12 @@ export function SelectionLayer({ selection, onChange, onCommit }: Props) {
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       const drag = dragRef.current;
-      if (!drag) return;
+      const cur = selRef.current;
+      if (!drag || !cur) return;
       const dx = e.clientX - drag.startPointer.x;
       const dy = e.clientY - drag.startPointer.y;
       onChangeRef.current({
-        ...selRef.current,
+        ...cur,
         x: drag.startX + dx,
         y: drag.startY + dy,
       });

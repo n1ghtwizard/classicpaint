@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Pencil,
   Brush,
@@ -24,6 +25,12 @@ import {
   Feather,
   SprayCan,
   Palette,
+  Crop,
+  Spline,
+  LogIn,
+  LogOut,
+  Save,
+  User as UserIcon,
 } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
@@ -43,6 +50,9 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -56,11 +66,18 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { toast } from "sonner";
+import jsPDF from "jspdf";
 
 import { SHAPES, SHAPE_LOOKUP, renderShape, type DrawnShape, type ShapeKind } from "./shapes";
 import { ShapeTransformer } from "./ShapeTransformer";
 import { SelectionLayer, type FloatingSelection } from "./SelectionLayer";
 import { useTheme } from "./useTheme";
+import { CropOverlay, type CropAspect } from "./CropOverlay";
+import { PolylineEditor, renderPolyline, type PolylineDraft } from "./PolylineEditor";
+import { ColorPickerPopover } from "./ColorPickerPopover";
+import { SaveLoadDialog } from "./SaveLoadDialog";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Tool =
   | "select"
@@ -76,7 +93,23 @@ type Tool =
   | "fill"
   | "picker"
   | "shape"
-  | "text";
+  | "text"
+  | "crop"
+  | "polyline";
+
+// 2/3/4/5 point lines, straight or curved.
+type PolylineKind = "polyline-2" | "polyline-3" | "polyline-4" | "polyline-5"
+  | "curve-2" | "curve-3" | "curve-4" | "curve-5";
+const POLYLINE_KINDS: { id: PolylineKind; label: string; points: number; curved: boolean }[] = [
+  { id: "polyline-2", label: "Line (2 pts)",   points: 2, curved: false },
+  { id: "polyline-3", label: "Line (3 pts)",   points: 3, curved: false },
+  { id: "polyline-4", label: "Line (4 pts)",   points: 4, curved: false },
+  { id: "polyline-5", label: "Line (5 pts)",   points: 5, curved: false },
+  { id: "curve-2",    label: "Curve (2 pts)",  points: 2, curved: true  },
+  { id: "curve-3",    label: "Curve (3 pts)",  points: 3, curved: true  },
+  { id: "curve-4",    label: "Curve (4 pts)",  points: 4, curved: true  },
+  { id: "curve-5",    label: "Curve (5 pts)",  points: 5, curved: true  },
+];
 
 // Tools that paint freehand strokes on the bitmap canvas.
 const BRUSH_TOOLS: Tool[] = [
@@ -210,6 +243,31 @@ export const PaintApp = () => {
 
   const [presetId, setPresetId] = useState<CanvasPreset["id"]>("fit");
   const [confirmNew, setConfirmNew] = useState(false);
+
+  // Crop state
+  const [cropAspect, setCropAspect] = useState<CropAspect>("free");
+
+  // In-progress polyline (bendable line) draft + which sub-tool is active.
+  const [polylineKind, setPolylineKind] = useState<PolylineKind>("polyline-3");
+  const [polylineDraft, setPolylineDraft] = useState<PolylineDraft | null>(null);
+
+  // Custom color slots (5) persisted to localStorage; synced to DB if logged in.
+  const [customSlots, setCustomSlots] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem("paint:customSlots");
+      if (raw) {
+        const arr = JSON.parse(raw) as string[];
+        return [0, 1, 2, 3, 4].map((i) => arr[i] ?? "");
+      }
+    } catch {/* noop */}
+    return ["", "", "", "", ""];
+  });
+  useEffect(() => {
+    localStorage.setItem("paint:customSlots", JSON.stringify(customSlots));
+  }, [customSlots]);
+
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const { user, signOut } = useAuth();
 
   // The currently-editing shape — drawn into the preview canvas, not yet
   // committed to the main canvas. While set, the transformer overlay is shown.
@@ -1127,18 +1185,145 @@ export const PaintApp = () => {
     return out;
   };
 
-  const exportImage = (format: "png" | "jpg") => {
+  const exportImage = (format: "png" | "jpg" | "webp" | "pdf") => {
     if (activeShapeRef.current) commitActiveShape();
     if (selectionRef.current) commitSelection();
     const out = flattenToCanvas();
     if (!out) return;
-    const mime = format === "png" ? "image/png" : "image/jpeg";
-    const ext = format === "png" ? "png" : "jpg";
-    const url = out.toDataURL(mime, format === "jpg" ? 0.92 : undefined);
+    if (format === "pdf") {
+      const ratio = window.devicePixelRatio || 1;
+      const wPx = out.width / ratio;
+      const hPx = out.height / ratio;
+      const orientation = wPx >= hPx ? "landscape" : "portrait";
+      const pdf = new jsPDF({ orientation, unit: "px", format: [wPx, hPx] });
+      const dataUrl = out.toDataURL("image/png");
+      pdf.addImage(dataUrl, "PNG", 0, 0, wPx, hPx);
+      pdf.save("painting.pdf");
+      return;
+    }
+    const mimeMap = { png: "image/png", jpg: "image/jpeg", webp: "image/webp" } as const;
+    const mime = mimeMap[format];
+    const ext = format;
+    const quality = format === "png" ? undefined : 0.92;
+    const url = out.toDataURL(mime, quality);
     const link = document.createElement("a");
     link.download = `painting.${ext}`;
     link.href = url;
     link.click();
+  };
+
+  // Apply a crop rectangle (in CSS pixels) to the bitmap canvas.
+  const applyCrop = (rect: { x: number; y: number; w: number; h: number }) => {
+    const canvas = canvasRef.current;
+    const ctx = getCtx();
+    if (!canvas || !ctx) return;
+    if (placedShapesRef.current.length > 0) {
+      ctx.save();
+      for (const s of placedShapesRef.current) renderShape(ctx, s);
+      ctx.restore();
+      setPlacedShapes([]);
+    }
+    if (selectionRef.current) commitSelection();
+    const ratio = window.devicePixelRatio || 1;
+    const px = Math.max(0, Math.round(rect.x * ratio));
+    const py = Math.max(0, Math.round(rect.y * ratio));
+    const pw = Math.min(canvas.width - px, Math.round(rect.w * ratio));
+    const ph = Math.min(canvas.height - py, Math.round(rect.h * ratio));
+    if (pw <= 0 || ph <= 0) return;
+
+    const tmp = document.createElement("canvas");
+    tmp.width = pw;
+    tmp.height = ph;
+    const tctx = tmp.getContext("2d");
+    if (!tctx) return;
+    tctx.drawImage(canvas, px, py, pw, ph, 0, 0, pw, ph);
+
+    canvas.width = pw;
+    canvas.height = ph;
+    canvas.style.width = `${rect.w}px`;
+    canvas.style.height = `${rect.h}px`;
+    const preview = previewRef.current;
+    if (preview) {
+      preview.width = pw;
+      preview.height = ph;
+      preview.style.width = `${rect.w}px`;
+      preview.style.height = `${rect.h}px`;
+      const pctx = preview.getContext("2d");
+      if (pctx) pctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    }
+    const newCtx = canvas.getContext("2d");
+    if (!newCtx) return;
+    newCtx.fillStyle = "#ffffff";
+    newCtx.fillRect(0, 0, pw, ph);
+    newCtx.drawImage(tmp, 0, 0);
+    newCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    newCtx.lineCap = "round";
+    newCtx.lineJoin = "round";
+    setPresetId("fit");
+    pushHistory();
+    setTool("select");
+    toast.success("Cropped");
+  };
+
+  const commitPolyline = (draft: PolylineDraft) => {
+    const ctx = getCtx();
+    if (ctx && draft.points.length >= 2) {
+      renderPolyline(ctx, draft);
+      pushHistory();
+    }
+    setPolylineDraft(null);
+    setTool("pencil");
+  };
+
+  const loadImageIntoCanvas = (img: HTMLImageElement) => {
+    const canvas = canvasRef.current;
+    const preview = previewRef.current;
+    if (!canvas || !preview) return;
+    setActiveShape(null);
+    setSelection(null);
+    setPlacedShapes([]);
+    setPolylineDraft(null);
+    clearPreview();
+    const ratio = window.devicePixelRatio || 1;
+    const cssW = img.naturalWidth;
+    const cssH = img.naturalHeight;
+    canvas.width = Math.floor(cssW * ratio);
+    canvas.height = Math.floor(cssH * ratio);
+    canvas.style.width = `${cssW}px`;
+    canvas.style.height = `${cssH}px`;
+    preview.width = canvas.width;
+    preview.height = canvas.height;
+    preview.style.width = `${cssW}px`;
+    preview.style.height = `${cssH}px`;
+    const ctx = canvas.getContext("2d");
+    const pctx = preview.getContext("2d");
+    if (!ctx || !pctx) return;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    pctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    setPresetId("fit");
+    pushHistory();
+    toast.success("Painting loaded");
+  };
+
+  const getPngBlob = async (): Promise<Blob | null> => {
+    if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
+    const out = flattenToCanvas();
+    if (!out) return null;
+    return await new Promise((res) => out.toBlob((b) => res(b), "image/png"));
+  };
+
+  const handleSlotSave = (idx: number, hex: string) => {
+    setCustomSlots((prev) => {
+      const next = prev.slice();
+      next[Math.max(0, Math.min(4, idx))] = hex;
+      return next;
+    });
   };
 
   const cursorClass =
@@ -1221,6 +1406,23 @@ export const PaintApp = () => {
         </div>
 
         <div className="flex items-center gap-1">
+          {tool === "crop" && (
+            <div className="mr-2 flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">Aspect:</span>
+              <Select value={cropAspect} onValueChange={(v) => setCropAspect(v as CropAspect)}>
+                <SelectTrigger className="h-8 w-[110px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="free">Free</SelectItem>
+                  <SelectItem value="1:1">Square 1:1</SelectItem>
+                  <SelectItem value="4:3">4:3</SelectItem>
+                  <SelectItem value="16:9">16:9</SelectItem>
+                </SelectContent>
+              </Select>
+              <div className="mx-1 h-5 w-px bg-border" />
+            </div>
+          )}
           {showTextOptions && (
             <div className="mr-2 flex items-center gap-2">
               <Select value={fontFamily} onValueChange={setFontFamily}>
@@ -1305,6 +1507,44 @@ export const PaintApp = () => {
             </TooltipTrigger>
             <TooltipContent>{theme === "dark" ? "Light mode" : "Dark mode"}</TooltipContent>
           </Tooltip>
+          {user ? (
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs">
+                      <UserIcon className="h-3.5 w-3.5" />
+                      <span className="max-w-[80px] truncate">
+                        {user.user_metadata?.display_name ?? user.email?.split("@")[0]}
+                      </span>
+                      <ChevronDown className="h-3 w-3 opacity-60" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Account</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => setSaveDialogOpen(true)} className="text-xs">
+                  <Save className="mr-2 h-3 w-3" /> My paintings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => signOut()} className="text-xs">
+                  <LogOut className="mr-2 h-3 w-3" /> Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="sm" className="h-8 gap-1.5 px-2 text-xs" asChild>
+                  <Link to="/auth">
+                    <LogIn className="h-3.5 w-3.5" /> Sign in
+                  </Link>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Sign in to save</TooltipContent>
+            </Tooltip>
+          )}
           <DropdownMenu>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1326,6 +1566,12 @@ export const PaintApp = () => {
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => exportImage("jpg")} className="text-xs">
                 JPG image
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportImage("webp")} className="text-xs">
+                WebP image
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => exportImage("pdf")} className="text-xs">
+                PDF document
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -1531,6 +1777,90 @@ export const PaintApp = () => {
             </TooltipContent>
           </Tooltip>
 
+          {/* Bendable / multi-point lines */}
+          <Popover>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    className={cn(
+                      "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
+                      tool === "polyline"
+                        ? "bg-tool-active text-accent-foreground"
+                        : "text-foreground hover:bg-tool-hover",
+                    )}
+                    aria-label="Bendable lines"
+                    aria-pressed={tool === "polyline"}
+                  >
+                    <Spline className="h-[18px] w-[18px]" />
+                    <ChevronDown className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5 opacity-70" />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="right">Bendable lines</TooltipContent>
+            </Tooltip>
+            <PopoverContent side="right" align="start" className="w-[220px] p-2">
+              <div className="mb-2 px-1 text-[11px] font-medium text-muted-foreground">
+                Lines &amp; curves — pick one, then click on the canvas to drop each point
+              </div>
+              <div className="space-y-1">
+                {POLYLINE_KINDS.map((k) => (
+                  <button
+                    key={k.id}
+                    onClick={() => {
+                      if (activeShapeRef.current) commitActiveShape();
+                      if (selectionRef.current) commitSelection();
+                      setPolylineKind(k.id);
+                      setPolylineDraft({
+                        pointCount: k.points,
+                        curved: k.curved,
+                        color,
+                        strokeWidth: size,
+                        points: [],
+                      });
+                      setTool("polyline");
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors",
+                      polylineKind === k.id && tool === "polyline"
+                        ? "bg-tool-active text-accent-foreground"
+                        : "hover:bg-tool-hover",
+                    )}
+                  >
+                    <span>{k.label}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {k.curved ? "curved" : "straight"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </PopoverContent>
+          </Popover>
+
+          {/* Crop tool */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => {
+                  if (activeShapeRef.current) commitActiveShape();
+                  if (selectionRef.current) commitSelection();
+                  setTool("crop");
+                }}
+                className={cn(
+                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
+                  tool === "crop"
+                    ? "bg-tool-active text-accent-foreground"
+                    : "text-foreground hover:bg-tool-hover",
+                )}
+                aria-label="Crop"
+                aria-pressed={tool === "crop"}
+              >
+                <Crop className="h-[18px] w-[18px]" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">Crop canvas</TooltipContent>
+          </Tooltip>
+
           <div className="my-2 h-px w-8 shrink-0 bg-border" />
 
           <div className="mt-1 flex shrink-0 flex-col items-center gap-2">
@@ -1651,7 +1981,31 @@ export const PaintApp = () => {
               />
             )}
 
-            {/* In-progress marquee rectangle (selection tool, while dragging) */}
+            {/* Crop overlay */}
+            {tool === "crop" && containerRect && (
+              <CropOverlay
+                cssWidth={containerRect.width}
+                cssHeight={containerRect.height}
+                aspect={cropAspect}
+                onCancel={() => setTool("select")}
+                onConfirm={applyCrop}
+              />
+            )}
+
+            {/* Polyline (bendable line) editor */}
+            {tool === "polyline" && polylineDraft && (
+              <PolylineEditor
+                draft={polylineDraft}
+                cssWidth={containerRect?.width ?? 0}
+                cssHeight={containerRect?.height ?? 0}
+                onChange={setPolylineDraft}
+                onCancel={() => {
+                  setPolylineDraft(null);
+                  setTool("pencil");
+                }}
+                onCommit={commitPolyline}
+              />
+            )}
             {marquee && (
               <div
                 className="pointer-events-none absolute z-20 border border-dashed border-tool-active/80 bg-tool-active/10"
@@ -1705,26 +2059,23 @@ export const PaintApp = () => {
       </div>
 
       {/* Bottom palette */}
-      <footer className="flex items-center gap-4 border-t border-border bg-toolbar px-4 py-3 shadow-soft">
+      <footer className="flex flex-wrap items-center gap-4 border-t border-border bg-toolbar px-4 py-3 shadow-soft">
         <div className="flex items-center gap-2">
           <span
             className="h-7 w-7 rounded-md border border-border shadow-soft"
             style={{ backgroundColor: color }}
             aria-label="Current color"
           />
-          <label className="relative inline-flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border text-muted-foreground hover:bg-tool-hover">
-            <Pipette className="h-3.5 w-3.5" />
-            <input
-              type="color"
-              value={color}
-              onChange={(e) => {
-                setColor(e.target.value);
-                if (activeShape) setActiveShape({ ...activeShape, color: e.target.value });
-              }}
-              className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-              aria-label="Custom color"
-            />
-          </label>
+          <ColorPickerPopover
+            color={color}
+            onChange={(c) => {
+              setColor(c);
+              if (activeShape) setActiveShape({ ...activeShape, color: c });
+              if (polylineDraft) setPolylineDraft({ ...polylineDraft, color: c });
+            }}
+            customSlots={customSlots}
+            onSaveSlot={handleSlotSave}
+          />
         </div>
 
         <div className="mx-1 h-7 w-px bg-border" />
@@ -1738,6 +2089,7 @@ export const PaintApp = () => {
                 onClick={() => {
                   setColor(c);
                   if (activeShape) setActiveShape({ ...activeShape, color: c });
+                  if (polylineDraft) setPolylineDraft({ ...polylineDraft, color: c });
                 }}
                 className={cn(
                   "h-6 w-6 rounded-md border transition-transform hover:scale-110",
@@ -1748,6 +2100,28 @@ export const PaintApp = () => {
               />
             );
           })}
+        </div>
+
+        {/* 5 custom color slots */}
+        <div className="flex items-center gap-1.5">
+          <span className="text-[10px] uppercase tracking-wider text-muted-foreground">Custom</span>
+          {customSlots.map((slot, i) => (
+            <button
+              key={i}
+              onClick={() => slot && setColor(slot)}
+              onContextMenu={(e) => { e.preventDefault(); handleSlotSave(i, color); }}
+              title={slot ? `${slot} (right-click to overwrite)` : "Empty — right-click to save current"}
+              className={cn(
+                "h-6 w-6 rounded-md border transition-transform hover:scale-110",
+                slot ? "border-border" : "border-dashed border-border bg-muted/40",
+                slot && slot.toLowerCase() === color.toLowerCase() && "ring-2 ring-tool-active/40",
+              )}
+              style={{ backgroundColor: slot || undefined }}
+              aria-label={slot ? `Custom slot ${i + 1}` : `Empty slot ${i + 1}`}
+            >
+              {!slot && <span className="text-[10px] text-muted-foreground">+</span>}
+            </button>
+          ))}
         </div>
 
         <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
@@ -1797,6 +2171,13 @@ export const PaintApp = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <SaveLoadDialog
+        open={saveDialogOpen}
+        onOpenChange={setSaveDialogOpen}
+        getPngBlob={getPngBlob}
+        onLoad={loadImageIntoCanvas}
+      />
     </div>
   );
 };
