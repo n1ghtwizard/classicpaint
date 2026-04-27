@@ -15,7 +15,11 @@ import {
   Sun,
   Moon,
   MousePointer2,
+  Bold,
+  Italic,
+  Underline,
 } from "lucide-react";
+import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
