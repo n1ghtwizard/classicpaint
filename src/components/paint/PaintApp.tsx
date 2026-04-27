@@ -738,6 +738,13 @@ export const PaintApp = () => {
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Always track hover position for ghost cursor in shape/text mode.
+    if (tool === "shape" || tool === "text") {
+      setHoverPos(getPos(e));
+    } else if (hoverPos) {
+      setHoverPos(null);
+    }
+
     if (!drawingRef.current) return;
 
     if (tool === "select" && marqueeRef.current) {
@@ -749,6 +756,19 @@ export const PaintApp = () => {
         w: Math.abs(pos.x - start.startX),
         h: Math.abs(pos.y - start.startY),
       });
+      return;
+    }
+
+    if (tool === "shape" && shapeStartRef.current) {
+      const pos = getPos(e);
+      const start = shapeStartRef.current;
+      const x = Math.min(start.x, pos.x);
+      const y = Math.min(start.y, pos.y);
+      const w = Math.abs(pos.x - start.x);
+      const h = Math.abs(pos.y - start.y);
+      setActiveShape((prev) =>
+        prev ? { ...prev, x, y, w, h } : prev,
+      );
       return;
     }
 
@@ -771,6 +791,30 @@ export const PaintApp = () => {
       if (m && m.w > 4 && m.h > 4) {
         liftSelection(m);
       }
+      return;
+    }
+
+    if (tool === "shape" && shapeStartRef.current) {
+      shapeStartRef.current = null;
+      drawingRef.current = false;
+      // If the user just clicked (no drag), give the shape a sensible default
+      // size so it's visible and editable instead of being collapsed to 0.
+      setActiveShape((prev) => {
+        if (!prev) return prev;
+        if (prev.w < 8 || prev.h < 8) {
+          const isLine = prev.kind === "line" || prev.kind === "diagonal-line";
+          const dw = 200;
+          const dh = isLine ? 200 : 140;
+          return {
+            ...prev,
+            x: prev.x + prev.w / 2 - dw / 2,
+            y: prev.y + prev.h / 2 - dh / 2,
+            w: dw,
+            h: dh,
+          };
+        }
+        return prev;
+      });
       return;
     }
 
