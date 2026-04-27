@@ -1064,12 +1064,11 @@ export const PaintApp = () => {
                       <TooltipTrigger asChild>
                         <button
                           onClick={() => {
+                            if (activeShapeRef.current) commitActiveShape();
+                            if (selectionRef.current) commitSelection();
                             setShapeKind(s.id);
                             setTool("shape");
                             setShapesMenuOpen(false);
-                            // Drag-and-drop UX: immediately place the shape on
-                            // the canvas, ready to be moved/resized.
-                            placeShapeAtCenter(s.id);
                           }}
                           className={cn(
                             "flex h-9 w-9 items-center justify-center rounded-md transition-colors",
