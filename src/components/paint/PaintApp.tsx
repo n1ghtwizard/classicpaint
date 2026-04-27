@@ -15,7 +15,11 @@ import {
   Sun,
   Moon,
   MousePointer2,
+  Bold,
+  Italic,
+  Underline,
 } from "lucide-react";
+import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
 import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
@@ -151,6 +155,9 @@ export const PaintApp = () => {
 
   const [fontSize, setFontSize] = useState(24);
   const [fontFamily, setFontFamily] = useState(FONT_FAMILIES[0]);
+  const [textBold, setTextBold] = useState(false);
+  const [textItalic, setTextItalic] = useState(false);
+  const [textUnderline, setTextUnderline] = useState(false);
   const [textEditor, setTextEditor] = useState<TextEditor | null>(null);
 
   const [presetId, setPresetId] = useState<CanvasPreset["id"]>("fit");
@@ -162,6 +169,13 @@ export const PaintApp = () => {
   const activeShapeRef = useRef<DrawnShape | null>(null);
   activeShapeRef.current = activeShape;
 
+  // History of placed shape objects so they remain editable via double-click
+  // until the user takes a destructive action (e.g. uses a pixel tool over
+  // them, exports, or starts a new canvas).
+  const [placedShapes, setPlacedShapes] = useState<DrawnShape[]>([]);
+  const placedShapesRef = useRef<DrawnShape[]>([]);
+  placedShapesRef.current = placedShapes;
+
   // Lifted selection (a region of pixels detached from the canvas, draggable).
   const [selection, setSelection] = useState<FloatingSelection | null>(null);
   const selectionRef = useRef<FloatingSelection | null>(null);
@@ -170,6 +184,10 @@ export const PaintApp = () => {
   // In-progress marquee while the user drags out a selection rectangle.
   const marqueeRef = useRef<{ startX: number; startY: number } | null>(null);
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  // Pointer position over the canvas, used to render a placement ghost when
+  // the shape or text tool is active.
+  const [hoverPos, setHoverPos] = useState<Point | null>(null);
 
   const { theme, toggle: toggleTheme } = useTheme();
 
@@ -217,19 +235,24 @@ export const PaintApp = () => {
 
   const renderActiveShapeToPreview = useCallback(() => {
     const ctx = getPreviewCtx();
-    const shape = activeShapeRef.current;
     clearPreview();
-    if (!ctx || !shape) return;
-    renderShape(ctx, shape);
+    if (!ctx) return;
+    for (const s of placedShapesRef.current) renderShape(ctx, s);
+    const shape = activeShapeRef.current;
+    if (shape) renderShape(ctx, shape);
   }, [clearPreview]);
 
-  // Re-render the preview whenever the active shape or selection changes.
+  // Re-render the preview whenever the active shape, placed shapes, or
+  // selection changes.
   useEffect(() => {
+    const ctx = getPreviewCtx();
+    if (!ctx) return;
     clearPreview();
-    if (activeShape) renderShape(getPreviewCtx()!, activeShape);
+    for (const s of placedShapes) renderShape(ctx, s);
+    if (activeShape) renderShape(ctx, activeShape);
     if (selection) renderSelectionToPreview(selection);
     // marquee is drawn separately via overlay div
-  }, [activeShape, selection, clearPreview, renderSelectionToPreview]);
+  }, [activeShape, placedShapes, selection, clearPreview, renderSelectionToPreview]);
 
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
@@ -302,19 +325,19 @@ export const PaintApp = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetId]);
 
-  // Commit the current shape to the main canvas and clear the overlay.
+  // Commit the current shape — moves it from the editing slot into the
+  // placedShapes list (still vector / re-editable). Switches the tool back
+  // to pencil so adding more shapes requires re-opening the shapes menu.
   const commitActiveShape = useCallback(() => {
     const shape = activeShapeRef.current;
-    const ctx = getCtx();
-    if (!shape || !ctx) {
+    if (!shape) {
       setActiveShape(null);
       return;
     }
-    renderShape(ctx, shape);
+    setPlacedShapes((prev) => [...prev, shape]);
     setActiveShape(null);
-    clearPreview();
-    pushHistory();
-  }, [clearPreview]);
+    setTool("pencil");
+  }, []);
 
   // Stamp the floating selection back onto the main canvas at its current
   // position, then clear the floating layer.
@@ -337,32 +360,6 @@ export const PaintApp = () => {
     clearPreview();
     pushHistory();
   }, [clearPreview]);
-
-  // Place a default-sized shape in the center of the visible canvas, ready
-  // for the user to drag/resize via the transformer overlay.
-  const placeShapeAtCenter = useCallback((kind: ShapeKind) => {
-    if (activeShapeRef.current) commitActiveShape();
-    if (selectionRef.current) commitSelection();
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ratio = window.devicePixelRatio || 1;
-    const cssW = canvas.width / ratio;
-    const cssH = canvas.height / ratio;
-    const isLine = kind === "line" || kind === "diagonal-line";
-    const w = Math.min(240, cssW * 0.4);
-    const h = isLine ? w : Math.min(180, cssH * 0.35);
-    setActiveShape({
-      kind,
-      x: (cssW - w) / 2,
-      y: (cssH - h) / 2,
-      w,
-      h,
-      rotation: 0,
-      color: colorRef.current,
-      strokeWidth: sizeRef.current,
-      fill: null,
-    });
-  }, [commitActiveShape, commitSelection]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -616,12 +613,20 @@ export const PaintApp = () => {
       ctx.save();
       ctx.globalCompositeOperation = "source-over";
       ctx.fillStyle = colorRef.current;
-      ctx.font = `${fontSize}px ${fontFamily}`;
+      const weight = textBold ? "bold" : "normal";
+      const style = textItalic ? "italic" : "normal";
+      ctx.font = `${style} ${weight} ${fontSize}px ${fontFamily}`;
       ctx.textBaseline = "top";
       const lines = value.split("\n");
       const lineHeight = Math.round(fontSize * 1.2);
       lines.forEach((line, i) => {
-        ctx.fillText(line, textEditor.x, textEditor.y + i * lineHeight);
+        const ly = textEditor.y + i * lineHeight;
+        ctx.fillText(line, textEditor.x, ly);
+        if (textUnderline && line.length > 0) {
+          const w = ctx.measureText(line).width;
+          const yLine = ly + Math.round(fontSize * 1.05);
+          ctx.fillRect(textEditor.x, yLine, w, Math.max(1, Math.round(fontSize / 14)));
+        }
       });
       ctx.restore();
       pushHistory();
@@ -635,6 +640,16 @@ export const PaintApp = () => {
     const ctx = getCtx();
     if (!canvas || !ctx) return;
     const ratio = window.devicePixelRatio || 1;
+
+    // Flatten placed shapes onto the bitmap first so the lifted region
+    // captures everything that's visually on the canvas.
+    if (placedShapesRef.current.length > 0) {
+      ctx.save();
+      for (const s of placedShapesRef.current) renderShape(ctx, s);
+      ctx.restore();
+      setPlacedShapes([]);
+    }
+
     const px = Math.max(0, Math.floor(rect.x * ratio));
     const py = Math.max(0, Math.floor(rect.y * ratio));
     const pw = Math.min(canvas.width - px, Math.floor(rect.w * ratio));
@@ -660,6 +675,101 @@ export const PaintApp = () => {
       imageData: data,
     });
     pushHistory();
+  }, []);
+
+  // Hit-test placedShapes (top-most first) at the given canvas-local point.
+  const findShapeAt = (pos: Point): number => {
+    const shapes = placedShapesRef.current;
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      const s = shapes[i];
+      // Convert pos into the shape's local space (un-rotate around center).
+      const cx = s.x + s.w / 2;
+      const cy = s.y + s.h / 2;
+      const cos = Math.cos(-s.rotation);
+      const sin = Math.sin(-s.rotation);
+      const dx = pos.x - cx;
+      const dy = pos.y - cy;
+      const lx = dx * cos - dy * sin + s.w / 2;
+      const ly = dx * sin + dy * cos + s.h / 2;
+      const pad = Math.max(8, s.strokeWidth);
+      if (lx >= -pad && lx <= s.w + pad && ly >= -pad && ly <= s.h + pad) {
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  // Double-click: re-edit the topmost placed shape under the cursor.
+  const onCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const pos = getPos(e as unknown as React.PointerEvent);
+    const idx = findShapeAt(pos);
+    if (idx === -1) return;
+    if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
+    const shape = placedShapesRef.current[idx];
+    setPlacedShapes((prev) => prev.filter((_, i) => i !== idx));
+    setActiveShape(shape);
+    setTool("shape");
+    setShapeKind(shape.kind);
+  };
+
+  // Paste image from clipboard as a floating selection.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (!file) continue;
+          e.preventDefault();
+          const url = URL.createObjectURL(file);
+          const img = new Image();
+          img.onload = () => {
+            URL.revokeObjectURL(url);
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const ratio = window.devicePixelRatio || 1;
+            const cssW = canvas.width / ratio;
+            const cssH = canvas.height / ratio;
+            // Scale to fit if larger than canvas.
+            let w = img.naturalWidth;
+            let h = img.naturalHeight;
+            const max = Math.min(cssW * 0.8, cssH * 0.8);
+            const scale = Math.min(1, max / Math.max(w, h));
+            w = w * scale;
+            h = h * scale;
+            // Render image into an offscreen canvas to grab ImageData.
+            const off = document.createElement("canvas");
+            off.width = Math.max(1, Math.floor(w * ratio));
+            off.height = Math.max(1, Math.floor(h * ratio));
+            const octx = off.getContext("2d");
+            if (!octx) return;
+            octx.drawImage(img, 0, 0, off.width, off.height);
+            const data = octx.getImageData(0, 0, off.width, off.height);
+            if (activeShapeRef.current) commitActiveShape();
+            if (selectionRef.current) commitSelection();
+            setSelection({
+              originX: (cssW - w) / 2,
+              originY: (cssH - h) / 2,
+              x: (cssW - w) / 2,
+              y: (cssH - h) / 2,
+              w,
+              h,
+              imageData: data,
+            });
+            setTool("select");
+          };
+          img.src = url;
+          return;
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -706,17 +816,16 @@ export const PaintApp = () => {
       return;
     }
     if (tool === "shape") {
-      // Drop a default-sized shape centered on the click; user adjusts via the
-      // transformer overlay. No drag-to-draw — keeps the workflow predictable.
-      const isLine = shapeKind === "line" || shapeKind === "diagonal-line";
-      const w = 200;
-      const h = isLine ? 200 : 140;
+      // Drag-to-place: start a 0-sized shape at the click; resize during
+      // pointermove; on pointerup the shape stays active (transformer shown).
+      drawingRef.current = true;
+      shapeStartRef.current = pos;
       setActiveShape({
         kind: shapeKind,
-        x: pos.x - w / 2,
-        y: pos.y - h / 2,
-        w,
-        h,
+        x: pos.x,
+        y: pos.y,
+        w: 0,
+        h: 0,
         rotation: 0,
         color,
         strokeWidth: size,
@@ -742,6 +851,13 @@ export const PaintApp = () => {
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Always track hover position for ghost cursor in shape/text mode.
+    if (tool === "shape" || tool === "text") {
+      setHoverPos(getPos(e));
+    } else if (hoverPos) {
+      setHoverPos(null);
+    }
+
     if (!drawingRef.current) return;
 
     if (tool === "select" && marqueeRef.current) {
@@ -753,6 +869,19 @@ export const PaintApp = () => {
         w: Math.abs(pos.x - start.startX),
         h: Math.abs(pos.y - start.startY),
       });
+      return;
+    }
+
+    if (tool === "shape" && shapeStartRef.current) {
+      const pos = getPos(e);
+      const start = shapeStartRef.current;
+      const x = Math.min(start.x, pos.x);
+      const y = Math.min(start.y, pos.y);
+      const w = Math.abs(pos.x - start.x);
+      const h = Math.abs(pos.y - start.y);
+      setActiveShape((prev) =>
+        prev ? { ...prev, x, y, w, h } : prev,
+      );
       return;
     }
 
@@ -778,6 +907,30 @@ export const PaintApp = () => {
       return;
     }
 
+    if (tool === "shape" && shapeStartRef.current) {
+      shapeStartRef.current = null;
+      drawingRef.current = false;
+      // If the user just clicked (no drag), give the shape a sensible default
+      // size so it's visible and editable instead of being collapsed to 0.
+      setActiveShape((prev) => {
+        if (!prev) return prev;
+        if (prev.w < 8 || prev.h < 8) {
+          const isLine = prev.kind === "line" || prev.kind === "diagonal-line";
+          const dw = 200;
+          const dh = isLine ? 200 : 140;
+          return {
+            ...prev,
+            x: prev.x + prev.w / 2 - dw / 2,
+            y: prev.y + prev.h / 2 - dh / 2,
+            w: dw,
+            h: dh,
+          };
+        }
+        return prev;
+      });
+      return;
+    }
+
     if (rafRef.current != null) {
       cancelAnimationFrame(rafRef.current);
       rafRef.current = null;
@@ -796,6 +949,7 @@ export const PaintApp = () => {
     if (!canvas || !ctx) return;
     setActiveShape(null);
     setSelection(null);
+    setPlacedShapes([]);
     clearPreview();
     const ratio = window.devicePixelRatio || 1;
     ctx.save();
@@ -807,21 +961,31 @@ export const PaintApp = () => {
     pushHistory();
   };
 
-  const exportImage = (format: "png" | "jpg") => {
-    // Make sure pending overlays are baked in before exporting.
-    if (activeShapeRef.current) commitActiveShape();
-    if (selectionRef.current) commitSelection();
+  // Composite the bitmap canvas + all placed/active shapes + selection into
+  // a single canvas. Used by export and by paste/selection operations.
+  const flattenToCanvas = (): HTMLCanvasElement | null => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas) return null;
     const out = document.createElement("canvas");
     out.width = canvas.width;
     out.height = canvas.height;
     const ctx = out.getContext("2d");
-    if (!ctx) return;
+    if (!ctx) return null;
+    const ratio = window.devicePixelRatio || 1;
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, out.width, out.height);
     ctx.drawImage(canvas, 0, 0);
+    ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+    for (const s of placedShapesRef.current) renderShape(ctx, s);
+    if (activeShapeRef.current) renderShape(ctx, activeShapeRef.current);
+    return out;
+  };
 
+  const exportImage = (format: "png" | "jpg") => {
+    if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
+    const out = flattenToCanvas();
+    if (!out) return;
     const mime = format === "png" ? "image/png" : "image/jpeg";
     const ext = format === "png" ? "png" : "jpg";
     const url = out.toDataURL(mime, format === "jpg" ? 0.92 : undefined);
@@ -936,6 +1100,33 @@ export const PaintApp = () => {
                   ))}
                 </SelectContent>
               </Select>
+              <Toggle
+                size="sm"
+                pressed={textBold}
+                onPressedChange={setTextBold}
+                aria-label="Bold"
+                className="h-8 w-8 p-0 data-[state=on]:bg-tool-active data-[state=on]:text-accent-foreground"
+              >
+                <Bold className="h-3.5 w-3.5" />
+              </Toggle>
+              <Toggle
+                size="sm"
+                pressed={textItalic}
+                onPressedChange={setTextItalic}
+                aria-label="Italic"
+                className="h-8 w-8 p-0 data-[state=on]:bg-tool-active data-[state=on]:text-accent-foreground"
+              >
+                <Italic className="h-3.5 w-3.5" />
+              </Toggle>
+              <Toggle
+                size="sm"
+                pressed={textUnderline}
+                onPressedChange={setTextUnderline}
+                aria-label="Underline"
+                className="h-8 w-8 p-0 data-[state=on]:bg-tool-active data-[state=on]:text-accent-foreground"
+              >
+                <Underline className="h-3.5 w-3.5" />
+              </Toggle>
               <div className="mx-1 h-5 w-px bg-border" />
             </div>
           )}
@@ -1067,12 +1258,11 @@ export const PaintApp = () => {
                       <TooltipTrigger asChild>
                         <button
                           onClick={() => {
+                            if (activeShapeRef.current) commitActiveShape();
+                            if (selectionRef.current) commitSelection();
                             setShapeKind(s.id);
                             setTool("shape");
                             setShapesMenuOpen(false);
-                            // Drag-and-drop UX: immediately place the shape on
-                            // the canvas, ready to be moved/resized.
-                            placeShapeAtCenter(s.id);
                           }}
                           className={cn(
                             "flex h-9 w-9 items-center justify-center rounded-md transition-colors",
@@ -1153,8 +1343,40 @@ export const PaintApp = () => {
               onPointerMove={onPointerMove}
               onPointerUp={endStroke}
               onPointerCancel={() => endStroke()}
-              onPointerLeave={() => endStroke()}
+              onPointerLeave={() => {
+                endStroke();
+                setHoverPos(null);
+              }}
+              onDoubleClick={onCanvasDoubleClick}
             />
+
+            {/* Ghost cursor: shown when about to place a shape or text box,
+                so the user knows exactly where the object will land. */}
+            {hoverPos && (tool === "shape" || tool === "text") && !activeShape && !drawingRef.current && (
+              <div
+                className="pointer-events-none absolute z-10"
+                style={{ left: hoverPos.x, top: hoverPos.y }}
+              >
+                {tool === "text" ? (
+                  <div
+                    className="absolute"
+                    style={{
+                      left: 0,
+                      top: 0,
+                      width: 1,
+                      height: Math.max(12, fontSize),
+                      background: "hsl(var(--tool-active))",
+                      animation: "pulse 1s ease-in-out infinite",
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="absolute -translate-x-1/2 -translate-y-1/2 rounded-sm border border-dashed border-tool-active/70 bg-tool-active/10"
+                    style={{ width: 24, height: 24 }}
+                  />
+                )}
+              </div>
+            )}
 
             {/* Shape transformer overlay — shown only after a shape is drawn,
                 while the user is still adjusting it. */}
@@ -1222,6 +1444,9 @@ export const PaintApp = () => {
                     color,
                     fontSize: `${fontSize}px`,
                     fontFamily,
+                    fontWeight: textBold ? 700 : 400,
+                    fontStyle: textItalic ? "italic" : "normal",
+                    textDecoration: textUnderline ? "underline" : "none",
                     lineHeight: 1.2,
                   }}
                 />
