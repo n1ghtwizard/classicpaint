@@ -632,6 +632,16 @@ export const PaintApp = () => {
     const ctx = getCtx();
     if (!canvas || !ctx) return;
     const ratio = window.devicePixelRatio || 1;
+
+    // Flatten placed shapes onto the bitmap first so the lifted region
+    // captures everything that's visually on the canvas.
+    if (placedShapesRef.current.length > 0) {
+      ctx.save();
+      for (const s of placedShapesRef.current) renderShape(ctx, s);
+      ctx.restore();
+      setPlacedShapes([]);
+    }
+
     const px = Math.max(0, Math.floor(rect.x * ratio));
     const py = Math.max(0, Math.floor(rect.y * ratio));
     const pw = Math.min(canvas.width - px, Math.floor(rect.w * ratio));
@@ -657,6 +667,101 @@ export const PaintApp = () => {
       imageData: data,
     });
     pushHistory();
+  }, []);
+
+  // Hit-test placedShapes (top-most first) at the given canvas-local point.
+  const findShapeAt = (pos: Point): number => {
+    const shapes = placedShapesRef.current;
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      const s = shapes[i];
+      // Convert pos into the shape's local space (un-rotate around center).
+      const cx = s.x + s.w / 2;
+      const cy = s.y + s.h / 2;
+      const cos = Math.cos(-s.rotation);
+      const sin = Math.sin(-s.rotation);
+      const dx = pos.x - cx;
+      const dy = pos.y - cy;
+      const lx = dx * cos - dy * sin + s.w / 2;
+      const ly = dx * sin + dy * cos + s.h / 2;
+      const pad = Math.max(8, s.strokeWidth);
+      if (lx >= -pad && lx <= s.w + pad && ly >= -pad && ly <= s.h + pad) {
+        return i;
+      }
+    }
+    return -1;
+  };
+
+  // Double-click: re-edit the topmost placed shape under the cursor.
+  const onCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    const pos = getPos(e as unknown as React.PointerEvent);
+    const idx = findShapeAt(pos);
+    if (idx === -1) return;
+    if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
+    const shape = placedShapesRef.current[idx];
+    setPlacedShapes((prev) => prev.filter((_, i) => i !== idx));
+    setActiveShape(shape);
+    setTool("shape");
+    setShapeKind(shape.kind);
+  };
+
+  // Paste image from clipboard as a floating selection.
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (!file) continue;
+          e.preventDefault();
+          const url = URL.createObjectURL(file);
+          const img = new Image();
+          img.onload = () => {
+            URL.revokeObjectURL(url);
+            const canvas = canvasRef.current;
+            if (!canvas) return;
+            const ratio = window.devicePixelRatio || 1;
+            const cssW = canvas.width / ratio;
+            const cssH = canvas.height / ratio;
+            // Scale to fit if larger than canvas.
+            let w = img.naturalWidth;
+            let h = img.naturalHeight;
+            const max = Math.min(cssW * 0.8, cssH * 0.8);
+            const scale = Math.min(1, max / Math.max(w, h));
+            w = w * scale;
+            h = h * scale;
+            // Render image into an offscreen canvas to grab ImageData.
+            const off = document.createElement("canvas");
+            off.width = Math.max(1, Math.floor(w * ratio));
+            off.height = Math.max(1, Math.floor(h * ratio));
+            const octx = off.getContext("2d");
+            if (!octx) return;
+            octx.drawImage(img, 0, 0, off.width, off.height);
+            const data = octx.getImageData(0, 0, off.width, off.height);
+            if (activeShapeRef.current) commitActiveShape();
+            if (selectionRef.current) commitSelection();
+            setSelection({
+              originX: (cssW - w) / 2,
+              originY: (cssH - h) / 2,
+              x: (cssW - w) / 2,
+              y: (cssH - h) / 2,
+              w,
+              h,
+              imageData: data,
+            });
+            setTool("select");
+          };
+          img.src = url;
+          return;
+        }
+      }
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
