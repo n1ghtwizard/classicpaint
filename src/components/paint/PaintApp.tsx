@@ -613,12 +613,20 @@ export const PaintApp = () => {
       ctx.save();
       ctx.globalCompositeOperation = "source-over";
       ctx.fillStyle = colorRef.current;
-      ctx.font = `${fontSize}px ${fontFamily}`;
+      const weight = textBold ? "bold" : "normal";
+      const style = textItalic ? "italic" : "normal";
+      ctx.font = `${style} ${weight} ${fontSize}px ${fontFamily}`;
       ctx.textBaseline = "top";
       const lines = value.split("\n");
       const lineHeight = Math.round(fontSize * 1.2);
       lines.forEach((line, i) => {
-        ctx.fillText(line, textEditor.x, textEditor.y + i * lineHeight);
+        const ly = textEditor.y + i * lineHeight;
+        ctx.fillText(line, textEditor.x, ly);
+        if (textUnderline && line.length > 0) {
+          const w = ctx.measureText(line).width;
+          const yLine = ly + Math.round(fontSize * 1.05);
+          ctx.fillRect(textEditor.x, yLine, w, Math.max(1, Math.round(fontSize / 14)));
+        }
       });
       ctx.restore();
       pushHistory();
