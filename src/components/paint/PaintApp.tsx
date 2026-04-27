@@ -18,6 +18,12 @@ import {
   Bold,
   Italic,
   Underline,
+  Highlighter,
+  PenTool,
+  PenLine,
+  Feather,
+  SprayCan,
+  Palette,
 } from "lucide-react";
 import { Toggle } from "@/components/ui/toggle";
 import { cn } from "@/lib/utils";
@@ -56,7 +62,33 @@ import { ShapeTransformer } from "./ShapeTransformer";
 import { SelectionLayer, type FloatingSelection } from "./SelectionLayer";
 import { useTheme } from "./useTheme";
 
-type Tool = "select" | "pencil" | "brush" | "eraser" | "fill" | "picker" | "shape" | "text";
+type Tool =
+  | "select"
+  | "pencil"
+  | "brush"
+  | "marker"
+  | "calligraphy"
+  | "ink"
+  | "watercolor"
+  | "crayon"
+  | "spray"
+  | "eraser"
+  | "fill"
+  | "picker"
+  | "shape"
+  | "text";
+
+// Tools that paint freehand strokes on the bitmap canvas.
+const BRUSH_TOOLS: Tool[] = [
+  "pencil",
+  "brush",
+  "marker",
+  "calligraphy",
+  "ink",
+  "watercolor",
+  "crayon",
+  "spray",
+];
 
 const PRESET_COLORS = [
   "#000000", "#7f7f7f", "#880015", "#ed1c24", "#ff7f27", "#fff200",
@@ -90,14 +122,26 @@ interface ToolBtn {
   shortcut: string;
 }
 
+// Top-level sidebar buttons (not inside the brushes dropdown).
 const TOOLS: ToolBtn[] = [
   { id: "select", icon: MousePointer2, label: "Select", shortcut: "V" },
+];
+
+const TEXT_TOOL: ToolBtn = { id: "text", icon: Type, label: "Text", shortcut: "T" };
+
+// All hand/painting tools that live inside the Brushes dropdown.
+const BRUSHES: ToolBtn[] = [
   { id: "pencil", icon: Pencil, label: "Pencil", shortcut: "P" },
   { id: "brush", icon: Brush, label: "Brush", shortcut: "B" },
+  { id: "marker", icon: Highlighter, label: "Marker", shortcut: "" },
+  { id: "calligraphy", icon: PenTool, label: "Calligraphy", shortcut: "" },
+  { id: "ink", icon: PenLine, label: "Ink pen", shortcut: "" },
+  { id: "watercolor", icon: Feather, label: "Watercolor", shortcut: "" },
+  { id: "crayon", icon: Palette, label: "Crayon", shortcut: "" },
+  { id: "spray", icon: SprayCan, label: "Spray", shortcut: "" },
   { id: "eraser", icon: Eraser, label: "Eraser", shortcut: "E" },
   { id: "fill", icon: PaintBucket, label: "Fill bucket", shortcut: "F" },
   { id: "picker", icon: Pipette, label: "Color picker", shortcut: "I" },
-  { id: "text", icon: Type, label: "Text", shortcut: "T" },
 ];
 
 interface Point {
@@ -145,9 +189,13 @@ export const PaintApp = () => {
 
   const textInputRef = useRef<HTMLTextAreaElement>(null);
 
-  const [tool, setTool] = useState<Tool>("pencil");
+  const [tool, setTool] = useState<Tool>("select");
   const [shapeKind, setShapeKind] = useState<ShapeKind>("rectangle");
   const [shapesMenuOpen, setShapesMenuOpen] = useState(false);
+  const [brushesMenuOpen, setBrushesMenuOpen] = useState(false);
+  // Last brush picked from the brushes dropdown — used for the dropdown's
+  // current icon and quick re-selection.
+  const [lastBrush, setLastBrush] = useState<Tool>("pencil");
   const [color, setColor] = useState("#000000");
   const [size, setSize] = useState(6);
   const [canUndo, setCanUndo] = useState(false);
@@ -511,24 +559,103 @@ export const PaintApp = () => {
     pendingPointsRef.current = [];
 
     const t = toolRef.current;
+    const baseSize = sizeRef.current;
+    const col = colorRef.current;
+
+    ctx.save();
     ctx.globalCompositeOperation = t === "eraser" ? "destination-out" : "source-over";
-    ctx.strokeStyle = colorRef.current;
-    ctx.lineWidth = t === "pencil" ? Math.max(1, Math.round(sizeRef.current / 3)) : sizeRef.current;
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+
+    // Per-brush style setup.
+    let lineWidth = baseSize;
+    if (t === "pencil") lineWidth = Math.max(1, Math.round(baseSize / 3));
+    if (t === "marker") {
+      lineWidth = baseSize * 1.4;
+      ctx.globalAlpha = 0.35;
+      ctx.lineCap = "square";
+    }
+    if (t === "ink") {
+      lineWidth = Math.max(1, baseSize * 0.7);
+    }
+    if (t === "watercolor") {
+      lineWidth = baseSize * 1.2;
+      ctx.globalAlpha = 0.18;
+    }
+    if (t === "calligraphy") {
+      lineWidth = baseSize;
+      ctx.lineCap = "butt";
+    }
+    if (t === "crayon") {
+      lineWidth = baseSize;
+      ctx.globalAlpha = 0.55;
+    }
+    ctx.lineWidth = lineWidth;
 
     let prev = lastPointRef.current!;
     let mid = midPointRef.current!;
 
-    for (const p of points) {
-      const newMid = { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 };
-      ctx.beginPath();
-      ctx.moveTo(mid.x, mid.y);
-      ctx.quadraticCurveTo(prev.x, prev.y, newMid.x, newMid.y);
-      ctx.stroke();
-      mid = newMid;
-      prev = p;
+    if (t === "spray") {
+      // Spray paint: scatter dots around each incoming point.
+      const radius = baseSize;
+      const density = Math.max(6, Math.round(baseSize * 1.2));
+      for (const p of points) {
+        for (let i = 0; i < density; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = Math.random() * radius;
+          ctx.beginPath();
+          ctx.arc(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, 0.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        prev = p;
+        mid = p;
+      }
+    } else if (t === "calligraphy") {
+      // Angled nib — draw a short rotated line at each segment.
+      const angle = -Math.PI / 4;
+      const half = lineWidth / 2;
+      for (const p of points) {
+        ctx.beginPath();
+        ctx.moveTo(prev.x - Math.cos(angle) * half, prev.y - Math.sin(angle) * half);
+        ctx.lineTo(prev.x + Math.cos(angle) * half, prev.y + Math.sin(angle) * half);
+        ctx.lineTo(p.x + Math.cos(angle) * half, p.y + Math.sin(angle) * half);
+        ctx.lineTo(p.x - Math.cos(angle) * half, p.y - Math.sin(angle) * half);
+        ctx.closePath();
+        ctx.fill();
+        prev = p;
+        mid = p;
+      }
+    } else if (t === "crayon") {
+      // Crayon: jittered multi-stroke for a textured look.
+      for (const p of points) {
+        const newMid = { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 };
+        for (let i = 0; i < 3; i++) {
+          const jx = (Math.random() - 0.5) * lineWidth * 0.6;
+          const jy = (Math.random() - 0.5) * lineWidth * 0.6;
+          ctx.beginPath();
+          ctx.moveTo(mid.x + jx, mid.y + jy);
+          ctx.quadraticCurveTo(prev.x + jx, prev.y + jy, newMid.x + jx, newMid.y + jy);
+          ctx.stroke();
+        }
+        mid = newMid;
+        prev = p;
+      }
+    } else {
+      // Smooth quadratic curve for pencil / brush / marker / ink / watercolor / eraser.
+      for (const p of points) {
+        const newMid = { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 };
+        ctx.beginPath();
+        ctx.moveTo(mid.x, mid.y);
+        ctx.quadraticCurveTo(prev.x, prev.y, newMid.x, newMid.y);
+        ctx.stroke();
+        mid = newMid;
+        prev = p;
+      }
     }
+
+    ctx.restore();
 
     lastPointRef.current = prev;
     midPointRef.current = mid;
@@ -1008,6 +1135,10 @@ export const PaintApp = () => {
   const currentPreset = PRESETS.find((p) => p.id === presetId)!;
   const currentShape = SHAPE_LOOKUP[shapeKind];
   const ShapeIcon = currentShape.icon;
+  const currentBrush =
+    BRUSHES.find((b) => b.id === tool) ?? BRUSHES.find((b) => b.id === lastBrush) ?? BRUSHES[0];
+  const BrushIcon = currentBrush.icon;
+  const isBrushActive = BRUSH_TOOLS.includes(tool) || tool === "eraser" || tool === "fill" || tool === "picker";
   const containerRect = containerRef.current?.getBoundingClientRect();
 
   return (
@@ -1216,7 +1347,79 @@ export const PaintApp = () => {
             );
           })}
 
-          {/* Shapes button — opens a popover with the full shape grid */}
+          {/* Brushes / hand tools dropdown — pencil, brush, marker, etc. */}
+          <Popover open={brushesMenuOpen} onOpenChange={setBrushesMenuOpen}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    onClick={() => {
+                      if (activeShapeRef.current) commitActiveShape();
+                      if (selectionRef.current) commitSelection();
+                      setTool(lastBrush);
+                    }}
+                    className={cn(
+                      "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
+                      isBrushActive
+                        ? "bg-tool-active text-accent-foreground"
+                        : "text-foreground hover:bg-tool-hover",
+                    )}
+                    aria-label="Brushes"
+                    aria-pressed={isBrushActive}
+                  >
+                    <BrushIcon className="h-[18px] w-[18px]" />
+                    <ChevronDown className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5 opacity-70" />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                Brushes <span className="ml-1 text-muted-foreground">(B)</span>
+              </TooltipContent>
+            </Tooltip>
+            <PopoverContent side="right" align="start" className="w-[220px] p-2">
+              <div className="mb-2 px-1 text-[11px] font-medium text-muted-foreground">
+                Brushes &amp; tools
+              </div>
+              <div className="grid grid-cols-4 gap-1">
+                {BRUSHES.map((b) => {
+                  const Icon = b.icon;
+                  const active = tool === b.id;
+                  return (
+                    <Tooltip key={b.id}>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => {
+                            if (activeShapeRef.current) commitActiveShape();
+                            if (selectionRef.current) commitSelection();
+                            setTool(b.id);
+                            setLastBrush(b.id);
+                            setBrushesMenuOpen(false);
+                          }}
+                          className={cn(
+                            "flex h-9 w-9 items-center justify-center rounded-md transition-colors",
+                            active
+                              ? "bg-tool-active text-accent-foreground"
+                              : "text-foreground hover:bg-tool-hover",
+                          )}
+                          aria-label={b.label}
+                          aria-pressed={active}
+                        >
+                          <Icon className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        {b.label}
+                        {b.shortcut && (
+                          <span className="ml-1 text-muted-foreground">({b.shortcut})</span>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+            </PopoverContent>
+          </Popover>
+
           <Popover open={shapesMenuOpen} onOpenChange={setShapesMenuOpen}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1282,6 +1485,32 @@ export const PaintApp = () => {
               </div>
             </PopoverContent>
           </Popover>
+
+          {/* Text tool */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => {
+                  if (activeShapeRef.current) commitActiveShape();
+                  if (selectionRef.current) commitSelection();
+                  setTool("text");
+                }}
+                className={cn(
+                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
+                  tool === "text"
+                    ? "bg-tool-active text-accent-foreground"
+                    : "text-foreground hover:bg-tool-hover",
+                )}
+                aria-label="Text"
+                aria-pressed={tool === "text"}
+              >
+                <Type className="h-[18px] w-[18px]" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              Text <span className="ml-1 text-muted-foreground">(T)</span>
+            </TooltipContent>
+          </Tooltip>
 
           <div className="my-2 h-px w-8 shrink-0 bg-border" />
 
@@ -1518,7 +1747,13 @@ export const PaintApp = () => {
               Drag a rectangle to lift a region as a floating layer
             </span>
           )}
-          <span>{tool === "shape" ? `Shape: ${currentShape.label}` : TOOLS.find((t) => t.id === tool)?.label}</span>
+          <span>
+            {tool === "shape"
+              ? `Shape: ${currentShape.label}`
+              : TOOLS.find((t) => t.id === tool)?.label
+                ?? BRUSHES.find((b) => b.id === tool)?.label
+                ?? (tool === "text" ? "Text" : tool)}
+          </span>
         </div>
       </footer>
 
