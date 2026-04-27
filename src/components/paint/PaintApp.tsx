@@ -703,17 +703,16 @@ export const PaintApp = () => {
       return;
     }
     if (tool === "shape") {
-      // Drop a default-sized shape centered on the click; user adjusts via the
-      // transformer overlay. No drag-to-draw — keeps the workflow predictable.
-      const isLine = shapeKind === "line" || shapeKind === "diagonal-line";
-      const w = 200;
-      const h = isLine ? 200 : 140;
+      // Drag-to-place: start a 0-sized shape at the click; resize during
+      // pointermove; on pointerup the shape stays active (transformer shown).
+      drawingRef.current = true;
+      shapeStartRef.current = pos;
       setActiveShape({
         kind: shapeKind,
-        x: pos.x - w / 2,
-        y: pos.y - h / 2,
-        w,
-        h,
+        x: pos.x,
+        y: pos.y,
+        w: 0,
+        h: 0,
         rotation: 0,
         color,
         strokeWidth: size,
