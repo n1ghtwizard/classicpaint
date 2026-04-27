@@ -244,6 +244,31 @@ export const PaintApp = () => {
   const [presetId, setPresetId] = useState<CanvasPreset["id"]>("fit");
   const [confirmNew, setConfirmNew] = useState(false);
 
+  // Crop state
+  const [cropAspect, setCropAspect] = useState<CropAspect>("free");
+
+  // In-progress polyline (bendable line) draft + which sub-tool is active.
+  const [polylineKind, setPolylineKind] = useState<PolylineKind>("polyline-3");
+  const [polylineDraft, setPolylineDraft] = useState<PolylineDraft | null>(null);
+
+  // Custom color slots (5) persisted to localStorage; synced to DB if logged in.
+  const [customSlots, setCustomSlots] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem("paint:customSlots");
+      if (raw) {
+        const arr = JSON.parse(raw) as string[];
+        return [0, 1, 2, 3, 4].map((i) => arr[i] ?? "");
+      }
+    } catch {/* noop */}
+    return ["", "", "", "", ""];
+  });
+  useEffect(() => {
+    localStorage.setItem("paint:customSlots", JSON.stringify(customSlots));
+  }, [customSlots]);
+
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const { user, signOut } = useAuth();
+
   // The currently-editing shape — drawn into the preview canvas, not yet
   // committed to the main canvas. While set, the transformer overlay is shown.
   const [activeShape, setActiveShape] = useState<DrawnShape | null>(null);
