@@ -155,6 +155,9 @@ export const PaintApp = () => {
 
   const [fontSize, setFontSize] = useState(24);
   const [fontFamily, setFontFamily] = useState(FONT_FAMILIES[0]);
+  const [textBold, setTextBold] = useState(false);
+  const [textItalic, setTextItalic] = useState(false);
+  const [textUnderline, setTextUnderline] = useState(false);
   const [textEditor, setTextEditor] = useState<TextEditor | null>(null);
 
   const [presetId, setPresetId] = useState<CanvasPreset["id"]>("fit");
@@ -166,6 +169,13 @@ export const PaintApp = () => {
   const activeShapeRef = useRef<DrawnShape | null>(null);
   activeShapeRef.current = activeShape;
 
+  // History of placed shape objects so they remain editable via double-click
+  // until the user takes a destructive action (e.g. uses a pixel tool over
+  // them, exports, or starts a new canvas).
+  const [placedShapes, setPlacedShapes] = useState<DrawnShape[]>([]);
+  const placedShapesRef = useRef<DrawnShape[]>([]);
+  placedShapesRef.current = placedShapes;
+
   // Lifted selection (a region of pixels detached from the canvas, draggable).
   const [selection, setSelection] = useState<FloatingSelection | null>(null);
   const selectionRef = useRef<FloatingSelection | null>(null);
@@ -174,6 +184,10 @@ export const PaintApp = () => {
   // In-progress marquee while the user drags out a selection rectangle.
   const marqueeRef = useRef<{ startX: number; startY: number } | null>(null);
   const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  // Pointer position over the canvas, used to render a placement ghost when
+  // the shape or text tool is active.
+  const [hoverPos, setHoverPos] = useState<Point | null>(null);
 
   const { theme, toggle: toggleTheme } = useTheme();
 
