@@ -62,7 +62,33 @@ import { ShapeTransformer } from "./ShapeTransformer";
 import { SelectionLayer, type FloatingSelection } from "./SelectionLayer";
 import { useTheme } from "./useTheme";
 
-type Tool = "select" | "pencil" | "brush" | "eraser" | "fill" | "picker" | "shape" | "text";
+type Tool =
+  | "select"
+  | "pencil"
+  | "brush"
+  | "marker"
+  | "calligraphy"
+  | "ink"
+  | "watercolor"
+  | "crayon"
+  | "spray"
+  | "eraser"
+  | "fill"
+  | "picker"
+  | "shape"
+  | "text";
+
+// Tools that paint freehand strokes on the bitmap canvas.
+const BRUSH_TOOLS: Tool[] = [
+  "pencil",
+  "brush",
+  "marker",
+  "calligraphy",
+  "ink",
+  "watercolor",
+  "crayon",
+  "spray",
+];
 
 const PRESET_COLORS = [
   "#000000", "#7f7f7f", "#880015", "#ed1c24", "#ff7f27", "#fff200",
@@ -96,14 +122,25 @@ interface ToolBtn {
   shortcut: string;
 }
 
+// Top-level sidebar buttons (not inside the brushes dropdown).
 const TOOLS: ToolBtn[] = [
   { id: "select", icon: MousePointer2, label: "Select", shortcut: "V" },
+  { id: "text", icon: Type, label: "Text", shortcut: "T" },
+];
+
+// All hand/painting tools that live inside the Brushes dropdown.
+const BRUSHES: ToolBtn[] = [
   { id: "pencil", icon: Pencil, label: "Pencil", shortcut: "P" },
   { id: "brush", icon: Brush, label: "Brush", shortcut: "B" },
+  { id: "marker", icon: Highlighter, label: "Marker", shortcut: "" },
+  { id: "calligraphy", icon: PenTool, label: "Calligraphy", shortcut: "" },
+  { id: "ink", icon: PenLine, label: "Ink pen", shortcut: "" },
+  { id: "watercolor", icon: Feather, label: "Watercolor", shortcut: "" },
+  { id: "crayon", icon: Palette, label: "Crayon", shortcut: "" },
+  { id: "spray", icon: SprayCan, label: "Spray", shortcut: "" },
   { id: "eraser", icon: Eraser, label: "Eraser", shortcut: "E" },
   { id: "fill", icon: PaintBucket, label: "Fill bucket", shortcut: "F" },
   { id: "picker", icon: Pipette, label: "Color picker", shortcut: "I" },
-  { id: "text", icon: Type, label: "Text", shortcut: "T" },
 ];
 
 interface Point {
