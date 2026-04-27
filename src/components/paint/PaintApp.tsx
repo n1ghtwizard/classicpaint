@@ -1347,7 +1347,79 @@ export const PaintApp = () => {
             );
           })}
 
-          {/* Shapes button — opens a popover with the full shape grid */}
+          {/* Brushes / hand tools dropdown — pencil, brush, marker, etc. */}
+          <Popover open={brushesMenuOpen} onOpenChange={setBrushesMenuOpen}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <PopoverTrigger asChild>
+                  <button
+                    onClick={() => {
+                      if (activeShapeRef.current) commitActiveShape();
+                      if (selectionRef.current) commitSelection();
+                      setTool(lastBrush);
+                    }}
+                    className={cn(
+                      "relative flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
+                      isBrushActive
+                        ? "bg-tool-active text-accent-foreground"
+                        : "text-foreground hover:bg-tool-hover",
+                    )}
+                    aria-label="Brushes"
+                    aria-pressed={isBrushActive}
+                  >
+                    <BrushIcon className="h-[18px] w-[18px]" />
+                    <ChevronDown className="absolute bottom-0.5 right-0.5 h-2.5 w-2.5 opacity-70" />
+                  </button>
+                </PopoverTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="right">
+                Brushes <span className="ml-1 text-muted-foreground">(B)</span>
+              </TooltipContent>
+            </Tooltip>
+            <PopoverContent side="right" align="start" className="w-[220px] p-2">
+              <div className="mb-2 px-1 text-[11px] font-medium text-muted-foreground">
+                Brushes &amp; tools
+              </div>
+              <div className="grid grid-cols-4 gap-1">
+                {BRUSHES.map((b) => {
+                  const Icon = b.icon;
+                  const active = tool === b.id;
+                  return (
+                    <Tooltip key={b.id}>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={() => {
+                            if (activeShapeRef.current) commitActiveShape();
+                            if (selectionRef.current) commitSelection();
+                            setTool(b.id);
+                            setLastBrush(b.id);
+                            setBrushesMenuOpen(false);
+                          }}
+                          className={cn(
+                            "flex h-9 w-9 items-center justify-center rounded-md transition-colors",
+                            active
+                              ? "bg-tool-active text-accent-foreground"
+                              : "text-foreground hover:bg-tool-hover",
+                          )}
+                          aria-label={b.label}
+                          aria-pressed={active}
+                        >
+                          <Icon className="h-4 w-4" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom">
+                        {b.label}
+                        {b.shortcut && (
+                          <span className="ml-1 text-muted-foreground">({b.shortcut})</span>
+                        )}
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })}
+              </div>
+            </PopoverContent>
+          </Popover>
+
           <Popover open={shapesMenuOpen} onOpenChange={setShapesMenuOpen}>
             <Tooltip>
               <TooltipTrigger asChild>
