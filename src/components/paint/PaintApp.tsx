@@ -558,24 +558,103 @@ export const PaintApp = () => {
     pendingPointsRef.current = [];
 
     const t = toolRef.current;
+    const baseSize = sizeRef.current;
+    const col = colorRef.current;
+
+    ctx.save();
     ctx.globalCompositeOperation = t === "eraser" ? "destination-out" : "source-over";
-    ctx.strokeStyle = colorRef.current;
-    ctx.lineWidth = t === "pencil" ? Math.max(1, Math.round(sizeRef.current / 3)) : sizeRef.current;
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+
+    // Per-brush style setup.
+    let lineWidth = baseSize;
+    if (t === "pencil") lineWidth = Math.max(1, Math.round(baseSize / 3));
+    if (t === "marker") {
+      lineWidth = baseSize * 1.4;
+      ctx.globalAlpha = 0.35;
+      ctx.lineCap = "square";
+    }
+    if (t === "ink") {
+      lineWidth = Math.max(1, baseSize * 0.7);
+    }
+    if (t === "watercolor") {
+      lineWidth = baseSize * 1.2;
+      ctx.globalAlpha = 0.18;
+    }
+    if (t === "calligraphy") {
+      lineWidth = baseSize;
+      ctx.lineCap = "butt";
+    }
+    if (t === "crayon") {
+      lineWidth = baseSize;
+      ctx.globalAlpha = 0.55;
+    }
+    ctx.lineWidth = lineWidth;
 
     let prev = lastPointRef.current!;
     let mid = midPointRef.current!;
 
-    for (const p of points) {
-      const newMid = { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 };
-      ctx.beginPath();
-      ctx.moveTo(mid.x, mid.y);
-      ctx.quadraticCurveTo(prev.x, prev.y, newMid.x, newMid.y);
-      ctx.stroke();
-      mid = newMid;
-      prev = p;
+    if (t === "spray") {
+      // Spray paint: scatter dots around each incoming point.
+      const radius = baseSize;
+      const density = Math.max(6, Math.round(baseSize * 1.2));
+      for (const p of points) {
+        for (let i = 0; i < density; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = Math.random() * radius;
+          ctx.beginPath();
+          ctx.arc(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r, 0.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        prev = p;
+        mid = p;
+      }
+    } else if (t === "calligraphy") {
+      // Angled nib — draw a short rotated line at each segment.
+      const angle = -Math.PI / 4;
+      const half = lineWidth / 2;
+      for (const p of points) {
+        ctx.beginPath();
+        ctx.moveTo(prev.x - Math.cos(angle) * half, prev.y - Math.sin(angle) * half);
+        ctx.lineTo(prev.x + Math.cos(angle) * half, prev.y + Math.sin(angle) * half);
+        ctx.lineTo(p.x + Math.cos(angle) * half, p.y + Math.sin(angle) * half);
+        ctx.lineTo(p.x - Math.cos(angle) * half, p.y - Math.sin(angle) * half);
+        ctx.closePath();
+        ctx.fill();
+        prev = p;
+        mid = p;
+      }
+    } else if (t === "crayon") {
+      // Crayon: jittered multi-stroke for a textured look.
+      for (const p of points) {
+        const newMid = { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 };
+        for (let i = 0; i < 3; i++) {
+          const jx = (Math.random() - 0.5) * lineWidth * 0.6;
+          const jy = (Math.random() - 0.5) * lineWidth * 0.6;
+          ctx.beginPath();
+          ctx.moveTo(mid.x + jx, mid.y + jy);
+          ctx.quadraticCurveTo(prev.x + jx, prev.y + jy, newMid.x + jx, newMid.y + jy);
+          ctx.stroke();
+        }
+        mid = newMid;
+        prev = p;
+      }
+    } else {
+      // Smooth quadratic curve for pencil / brush / marker / ink / watercolor / eraser.
+      for (const p of points) {
+        const newMid = { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 };
+        ctx.beginPath();
+        ctx.moveTo(mid.x, mid.y);
+        ctx.quadraticCurveTo(prev.x, prev.y, newMid.x, newMid.y);
+        ctx.stroke();
+        mid = newMid;
+        prev = p;
+      }
     }
+
+    ctx.restore();
 
     lastPointRef.current = prev;
     midPointRef.current = mid;
