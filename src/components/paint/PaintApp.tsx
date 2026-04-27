@@ -1486,6 +1486,32 @@ export const PaintApp = () => {
             </PopoverContent>
           </Popover>
 
+          {/* Text tool */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => {
+                  if (activeShapeRef.current) commitActiveShape();
+                  if (selectionRef.current) commitSelection();
+                  setTool("text");
+                }}
+                className={cn(
+                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-md transition-colors",
+                  tool === "text"
+                    ? "bg-tool-active text-accent-foreground"
+                    : "text-foreground hover:bg-tool-hover",
+                )}
+                aria-label="Text"
+                aria-pressed={tool === "text"}
+              >
+                <Type className="h-[18px] w-[18px]" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              Text <span className="ml-1 text-muted-foreground">(T)</span>
+            </TooltipContent>
+          </Tooltip>
+
           <div className="my-2 h-px w-8 shrink-0 bg-border" />
 
           <div className="mt-1 flex shrink-0 flex-col items-center gap-2">
