@@ -124,6 +124,9 @@ export function CropOverlay({ cssWidth, cssHeight, aspect, onCancel, onConfirm }
               left: Math.max(0, Math.min(cssWidth - 90, rect.x + rect.w - 90)),
               top: Math.min(cssHeight - 36, rect.y + rect.h + 4),
             }}
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerMove={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
           >
             <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={onCancel}>
               <X className="mr-1 h-3 w-3" /> Cancel
