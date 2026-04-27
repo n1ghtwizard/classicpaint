@@ -573,9 +573,10 @@ export const PaintApp = () => {
     let lineWidth = baseSize;
     if (t === "pencil") lineWidth = Math.max(1, Math.round(baseSize / 3));
     if (t === "marker") {
+      // Opaque chunky stroke — translucency caused visible striping where
+      // adjacent quadratic segments overlap between flushes.
       lineWidth = baseSize * 1.4;
-      ctx.globalAlpha = 0.35;
-      ctx.lineCap = "square";
+      ctx.lineCap = "round";
     }
     if (t === "ink") {
       lineWidth = Math.max(1, baseSize * 0.7);
