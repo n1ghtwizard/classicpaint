@@ -125,8 +125,9 @@ interface ToolBtn {
 // Top-level sidebar buttons (not inside the brushes dropdown).
 const TOOLS: ToolBtn[] = [
   { id: "select", icon: MousePointer2, label: "Select", shortcut: "V" },
-  { id: "text", icon: Type, label: "Text", shortcut: "T" },
 ];
+
+const TEXT_TOOL: ToolBtn = { id: "text", icon: Type, label: "Text", shortcut: "T" };
 
 // All hand/painting tools that live inside the Brushes dropdown.
 const BRUSHES: ToolBtn[] = [
