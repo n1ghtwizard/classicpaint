@@ -2173,6 +2173,7 @@ export const PaintApp = () => {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
+                setCustomSize(null);
                 wipeCanvas();
                 setConfirmNew(false);
               }}
