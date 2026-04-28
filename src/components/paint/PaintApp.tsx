@@ -479,6 +479,130 @@ export const PaintApp = () => {
     pushHistory();
   }, [clearPreview]);
 
+  // Build a PNG blob from a region of the main canvas (CSS pixel space).
+  const canvasRegionToBlob = useCallback(
+    async (cssX: number, cssY: number, cssW: number, cssH: number): Promise<Blob | null> => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const ratio = window.devicePixelRatio || 1;
+      const off = document.createElement("canvas");
+      off.width = Math.max(1, Math.floor(cssW * ratio));
+      off.height = Math.max(1, Math.floor(cssH * ratio));
+      const octx = off.getContext("2d");
+      if (!octx) return null;
+      octx.drawImage(
+        canvas,
+        Math.floor(cssX * ratio), Math.floor(cssY * ratio),
+        off.width, off.height,
+        0, 0, off.width, off.height,
+      );
+      return await new Promise<Blob | null>((resolve) =>
+        off.toBlob((b) => resolve(b), "image/png"),
+      );
+    },
+    [],
+  );
+
+  // Copy the current floating selection (or the whole canvas, if no selection)
+  // to the system clipboard as a PNG image.
+  const copyToClipboard = useCallback(async () => {
+    try {
+      const sel = selectionRef.current;
+      const canvas = canvasRef.current;
+      if (!canvas) return false;
+      let blob: Blob | null = null;
+      if (sel) {
+        const tmp = document.createElement("canvas");
+        tmp.width = sel.imageData.width;
+        tmp.height = sel.imageData.height;
+        const tctx = tmp.getContext("2d");
+        if (!tctx) return false;
+        tctx.putImageData(sel.imageData, 0, 0);
+        blob = await new Promise<Blob | null>((r) => tmp.toBlob((b) => r(b), "image/png"));
+      } else {
+        const ratio = window.devicePixelRatio || 1;
+        blob = await canvasRegionToBlob(0, 0, canvas.width / ratio, canvas.height / ratio);
+      }
+      if (!blob) return false;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const Item = (window as any).ClipboardItem;
+      if (!Item || !navigator.clipboard?.write) return false;
+      await navigator.clipboard.write([new Item({ "image/png": blob })]);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [canvasRegionToBlob]);
+
+  const cutToClipboard = useCallback(async () => {
+    const ok = await copyToClipboard();
+    if (!ok) return false;
+    if (selectionRef.current) {
+      // Drop floating selection without restoring it — that's the "cut".
+      setSelection(null);
+      clearPreview();
+      pushHistory();
+    }
+    return true;
+  }, [copyToClipboard, clearPreview]);
+
+  // Place a PNG blob on the canvas as a draggable floating selection. Shared
+  // by the global paste handler and the right-click "Paste" menu item.
+  const placeBlobAsSelection = useCallback((blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ratio = window.devicePixelRatio || 1;
+      const cssW = canvas.width / ratio;
+      const cssH = canvas.height / ratio;
+      let w = img.naturalWidth;
+      let h = img.naturalHeight;
+      const max = Math.min(cssW * 0.8, cssH * 0.8);
+      const scale = Math.min(1, max / Math.max(w, h));
+      w = w * scale; h = h * scale;
+      const off = document.createElement("canvas");
+      off.width = Math.max(1, Math.floor(w * ratio));
+      off.height = Math.max(1, Math.floor(h * ratio));
+      const octx = off.getContext("2d");
+      if (!octx) return;
+      octx.drawImage(img, 0, 0, off.width, off.height);
+      const data = octx.getImageData(0, 0, off.width, off.height);
+      if (activeShapeRef.current) commitActiveShape();
+      if (selectionRef.current) commitSelection();
+      setSelection({
+        originX: (cssW - w) / 2,
+        originY: (cssH - h) / 2,
+        x: (cssW - w) / 2,
+        y: (cssH - h) / 2,
+        w, h,
+        imageData: data,
+      });
+      setTool("select");
+    };
+    img.src = url;
+  }, [commitSelection]);
+
+  const pasteFromClipboard = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.read) return false;
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((t) => t.startsWith("image/"));
+        if (type) {
+          const blob = await item.getType(type);
+          placeBlobAsSelection(blob);
+          return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, [placeBlobAsSelection]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
