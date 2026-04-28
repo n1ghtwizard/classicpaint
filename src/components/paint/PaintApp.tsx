@@ -246,6 +246,10 @@ export const PaintApp = () => {
   const [presetId, setPresetId] = useState<CanvasPreset["id"]>("fit");
   // Custom canvas size (e.g. after a crop) — overrides preset sizing.
   const [customSize, setCustomSize] = useState<{ width: number; height: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const ZOOM_MIN = 0.1;
+  const ZOOM_MAX = 8;
+  const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
   const [confirmNew, setConfirmNew] = useState(false);
 
   // Crop state
