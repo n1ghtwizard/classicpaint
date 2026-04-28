@@ -250,6 +250,9 @@ export const PaintApp = () => {
   const ZOOM_MIN = 0.1;
   const ZOOM_MAX = 8;
   const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const panRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number; moved: boolean } | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
   const [confirmNew, setConfirmNew] = useState(false);
 
   // Crop state
@@ -479,6 +482,130 @@ export const PaintApp = () => {
     pushHistory();
   }, [clearPreview]);
 
+  // Build a PNG blob from a region of the main canvas (CSS pixel space).
+  const canvasRegionToBlob = useCallback(
+    async (cssX: number, cssY: number, cssW: number, cssH: number): Promise<Blob | null> => {
+      const canvas = canvasRef.current;
+      if (!canvas) return null;
+      const ratio = window.devicePixelRatio || 1;
+      const off = document.createElement("canvas");
+      off.width = Math.max(1, Math.floor(cssW * ratio));
+      off.height = Math.max(1, Math.floor(cssH * ratio));
+      const octx = off.getContext("2d");
+      if (!octx) return null;
+      octx.drawImage(
+        canvas,
+        Math.floor(cssX * ratio), Math.floor(cssY * ratio),
+        off.width, off.height,
+        0, 0, off.width, off.height,
+      );
+      return await new Promise<Blob | null>((resolve) =>
+        off.toBlob((b) => resolve(b), "image/png"),
+      );
+    },
+    [],
+  );
+
+  // Copy the current floating selection (or the whole canvas, if no selection)
+  // to the system clipboard as a PNG image.
+  const copyToClipboard = useCallback(async () => {
+    try {
+      const sel = selectionRef.current;
+      const canvas = canvasRef.current;
+      if (!canvas) return false;
+      let blob: Blob | null = null;
+      if (sel) {
+        const tmp = document.createElement("canvas");
+        tmp.width = sel.imageData.width;
+        tmp.height = sel.imageData.height;
+        const tctx = tmp.getContext("2d");
+        if (!tctx) return false;
+        tctx.putImageData(sel.imageData, 0, 0);
+        blob = await new Promise<Blob | null>((r) => tmp.toBlob((b) => r(b), "image/png"));
+      } else {
+        const ratio = window.devicePixelRatio || 1;
+        blob = await canvasRegionToBlob(0, 0, canvas.width / ratio, canvas.height / ratio);
+      }
+      if (!blob) return false;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const Item = (window as any).ClipboardItem;
+      if (!Item || !navigator.clipboard?.write) return false;
+      await navigator.clipboard.write([new Item({ "image/png": blob })]);
+      return true;
+    } catch {
+      return false;
+    }
+  }, [canvasRegionToBlob]);
+
+  const cutToClipboard = useCallback(async () => {
+    const ok = await copyToClipboard();
+    if (!ok) return false;
+    if (selectionRef.current) {
+      // Drop floating selection without restoring it — that's the "cut".
+      setSelection(null);
+      clearPreview();
+      pushHistory();
+    }
+    return true;
+  }, [copyToClipboard, clearPreview]);
+
+  // Place a PNG blob on the canvas as a draggable floating selection. Shared
+  // by the global paste handler and the right-click "Paste" menu item.
+  const placeBlobAsSelection = useCallback((blob: Blob) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = canvasRef.current;
+      if (!canvas) return;
+      const ratio = window.devicePixelRatio || 1;
+      const cssW = canvas.width / ratio;
+      const cssH = canvas.height / ratio;
+      let w = img.naturalWidth;
+      let h = img.naturalHeight;
+      const max = Math.min(cssW * 0.8, cssH * 0.8);
+      const scale = Math.min(1, max / Math.max(w, h));
+      w = w * scale; h = h * scale;
+      const off = document.createElement("canvas");
+      off.width = Math.max(1, Math.floor(w * ratio));
+      off.height = Math.max(1, Math.floor(h * ratio));
+      const octx = off.getContext("2d");
+      if (!octx) return;
+      octx.drawImage(img, 0, 0, off.width, off.height);
+      const data = octx.getImageData(0, 0, off.width, off.height);
+      if (activeShapeRef.current) commitActiveShape();
+      if (selectionRef.current) commitSelection();
+      setSelection({
+        originX: (cssW - w) / 2,
+        originY: (cssH - h) / 2,
+        x: (cssW - w) / 2,
+        y: (cssH - h) / 2,
+        w, h,
+        imageData: data,
+      });
+      setTool("select");
+    };
+    img.src = url;
+  }, [commitSelection]);
+
+  const pasteFromClipboard = useCallback(async () => {
+    try {
+      if (!navigator.clipboard?.read) return false;
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((t) => t.startsWith("image/"));
+        if (type) {
+          const blob = await item.getType(type);
+          placeBlobAsSelection(blob);
+          return true;
+        }
+      }
+      return false;
+    } catch {
+      return false;
+    }
+  }, [placeBlobAsSelection]);
+
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -494,6 +621,16 @@ export const PaintApp = () => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "y") {
         e.preventDefault();
         redo();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        copyToClipboard();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x") {
+        e.preventDefault();
+        cutToClipboard();
         return;
       }
       if (e.key === "Escape") {
@@ -538,7 +675,7 @@ export const PaintApp = () => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textEditor, commitActiveShape, commitSelection, clearPreview]);
+  }, [textEditor, commitActiveShape, commitSelection, clearPreview, copyToClipboard, cutToClipboard]);
 
   useEffect(() => {
     if (textEditor) {
@@ -975,6 +1112,8 @@ export const PaintApp = () => {
   }, []);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Right- or middle-click is reserved for pan / context menu — never draw.
+    if (e.button !== 0) return;
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
     const pos = getPos(e);
@@ -1956,13 +2095,57 @@ export const PaintApp = () => {
 
         {/* Canvas area */}
         <main
-          className="flex flex-1 items-center justify-center overflow-auto bg-secondary p-4"
+          ref={mainRef}
+          className="relative flex flex-1 items-center justify-center overflow-auto bg-secondary p-4"
           onWheel={(e) => {
             if (!(e.ctrlKey || e.metaKey)) return;
             e.preventDefault();
             const delta = e.deltaY > 0 ? -0.1 : 0.1;
             setZoom((z) => clampZoom(Math.round((z + delta) * 100) / 100));
           }}
+          onContextMenu={(e) => {
+            // Always suppress the native menu — we either pan or show our own.
+            e.preventDefault();
+            if (panRef.current?.moved) return;
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setCtxMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+          }}
+          onPointerDown={(e) => {
+            if (e.button !== 2) return;
+            const main = mainRef.current;
+            if (!main) return;
+            panRef.current = {
+              startX: e.clientX,
+              startY: e.clientY,
+              scrollLeft: main.scrollLeft,
+              scrollTop: main.scrollTop,
+              moved: false,
+            };
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            setCtxMenu(null);
+          }}
+          onPointerMove={(e) => {
+            const p = panRef.current;
+            const main = mainRef.current;
+            if (!p || !main) return;
+            const dx = e.clientX - p.startX;
+            const dy = e.clientY - p.startY;
+            if (!p.moved && Math.hypot(dx, dy) > 4) p.moved = true;
+            if (p.moved) {
+              main.scrollLeft = p.scrollLeft - dx;
+              main.scrollTop = p.scrollTop - dy;
+            }
+          }}
+          onPointerUp={(e) => {
+            if (e.button !== 2) return;
+            try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ }
+            // Keep panRef.moved through the synthesized contextmenu event so
+            // we can suppress the menu when the user actually panned, then
+            // clear it on the next frame.
+            requestAnimationFrame(() => { panRef.current = null; });
+          }}
+          onPointerCancel={() => { panRef.current = null; }}
+          style={{ cursor: panRef.current?.moved ? "grabbing" : undefined }}
         >
           <div
             ref={containerRef}
@@ -2130,6 +2313,60 @@ export const PaintApp = () => {
               </div>
             )}
           </div>
+          {ctxMenu && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onPointerDown={() => setCtxMenu(null)}
+                onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
+              />
+              <div
+                role="menu"
+                className="absolute z-50 min-w-[160px] overflow-hidden rounded-md border border-border bg-popover py-1 text-xs text-popover-foreground shadow-md"
+                style={{ left: ctxMenu.x, top: ctxMenu.y }}
+              >
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+                  onClick={async () => { await copyToClipboard(); setCtxMenu(null); }}
+                >
+                  <span>Copy</span><span className="ml-4 text-muted-foreground">⌘C</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+                  disabled={!selection}
+                  onClick={async () => { await cutToClipboard(); setCtxMenu(null); }}
+                >
+                  <span>Cut</span><span className="ml-4 text-muted-foreground">⌘X</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+                  onClick={async () => { await pasteFromClipboard(); setCtxMenu(null); }}
+                >
+                  <span>Paste</span><span className="ml-4 text-muted-foreground">⌘V</span>
+                </button>
+                <div className="my-1 h-px bg-border" />
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => { undo(); setCtxMenu(null); }}
+                  disabled={!canUndo}
+                >
+                  <span>Undo</span><span className="ml-4 text-muted-foreground">⌘Z</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => { redo(); setCtxMenu(null); }}
+                  disabled={!canRedo}
+                >
+                  <span>Redo</span><span className="ml-4 text-muted-foreground">⌘Y</span>
+                </button>
+              </div>
+            </>
+          )}
         </main>
       </div>
 
