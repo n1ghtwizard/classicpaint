@@ -1313,6 +1313,7 @@ export const PaintApp = () => {
     pctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+    setCustomSize(null);
     setPresetId("fit");
     pushHistory();
     toast.success("Painting loaded");
@@ -1394,7 +1395,7 @@ export const PaintApp = () => {
                 {PRESETS.map((p) => (
                   <DropdownMenuItem
                     key={p.id}
-                    onSelect={() => setPresetId(p.id)}
+                    onSelect={() => { setCustomSize(null); setPresetId(p.id); }}
                     className={cn(
                       "flex items-center justify-between text-xs",
                       p.id === presetId && "bg-accent/10 text-accent",
