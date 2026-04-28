@@ -373,7 +373,10 @@ export const PaintApp = () => {
 
     let cssW: number;
     let cssH: number;
-    if (preset.id === "fit") {
+    if (customSize) {
+      cssW = customSize.width;
+      cssH = customSize.height;
+    } else if (preset.id === "fit") {
       const r = container.getBoundingClientRect();
       cssW = Math.floor(r.width);
       cssH = Math.floor(r.height);
