@@ -260,6 +260,7 @@ export const PaintApp = () => {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
   const appClipboardRef = useRef<AppClipboard | null>(null);
   const panRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number; moved: boolean } | null>(null);
+  const suppressContextMenuRef = useRef(false);
   const mainRef = useRef<HTMLElement | null>(null);
   const [confirmNew, setConfirmNew] = useState(false);
 
@@ -2127,7 +2128,10 @@ export const PaintApp = () => {
             e.preventDefault();
             const surface = containerRef.current;
             if (!surface || !surface.contains(e.target as Node)) return;
-            if (panRef.current?.moved) return;
+            if (panRef.current?.moved || suppressContextMenuRef.current) {
+              suppressContextMenuRef.current = false;
+              return;
+            }
             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
             setCtxMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top });
           }}
@@ -2137,6 +2141,7 @@ export const PaintApp = () => {
             const surface = containerRef.current;
             if (!main || !surface || !surface.contains(e.target as Node)) return;
             e.preventDefault();
+            suppressContextMenuRef.current = false;
             panRef.current = {
               startX: e.clientX,
               startY: e.clientY,
@@ -2154,7 +2159,10 @@ export const PaintApp = () => {
             e.preventDefault();
             const dx = e.clientX - p.startX;
             const dy = e.clientY - p.startY;
-            if (!p.moved && Math.hypot(dx, dy) > 4) p.moved = true;
+            if (!p.moved && Math.hypot(dx, dy) > 4) {
+              p.moved = true;
+              suppressContextMenuRef.current = true;
+            }
             if (p.moved) {
               main.scrollLeft = p.scrollLeft - dx;
               main.scrollTop = p.scrollTop - dy;
@@ -2172,7 +2180,13 @@ export const PaintApp = () => {
           onPointerCancel={() => { panRef.current = null; }}
           style={{ cursor: panRef.current?.moved ? "grabbing" : undefined }}
         >
-          <div className="flex min-h-full min-w-full items-center justify-center p-4">
+          <div
+            className="flex min-h-full min-w-full items-center justify-center p-4"
+            style={{
+              width: Math.max(canvasSize.width * zoom + 32, mainRef.current?.clientWidth ?? 0),
+              height: Math.max(canvasSize.height * zoom + 32, mainRef.current?.clientHeight ?? 0),
+            }}
+          >
             <div
               className="relative shrink-0"
               style={{
