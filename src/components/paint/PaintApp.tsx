@@ -1350,7 +1350,7 @@ export const PaintApp = () => {
       {/* Top bar */}
       <header className="flex h-12 items-center justify-between border-b border-border bg-toolbar px-4 shadow-soft">
         <div className="flex items-center gap-3">
-          <h1 className="text-sm font-semibold tracking-tight">Paint</h1>
+          <h1 className="text-sm font-semibold tracking-tight">NeoPaint</h1>
           <div className="hidden items-center gap-1 sm:flex">
             <Tooltip>
               <TooltipTrigger asChild>
