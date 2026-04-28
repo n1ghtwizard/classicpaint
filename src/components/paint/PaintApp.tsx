@@ -250,6 +250,9 @@ export const PaintApp = () => {
   const ZOOM_MIN = 0.1;
   const ZOOM_MAX = 8;
   const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const panRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number; moved: boolean } | null>(null);
+  const mainRef = useRef<HTMLElement | null>(null);
   const [confirmNew, setConfirmNew] = useState(false);
 
   // Crop state
