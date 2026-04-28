@@ -1967,46 +1967,24 @@ export const PaintApp = () => {
             setZoom((z) => clampZoom(Math.round((z + delta) * 100) / 100));
           }}
         >
-          {(() => {
-            const baseW = customSize
-              ? customSize.width
-              : currentPreset.id === "fit"
-              ? null
-              : currentPreset.width;
-            const baseH = customSize
-              ? customSize.height
-              : currentPreset.id === "fit"
-              ? null
-              : currentPreset.height;
-            // Outer stage reserves the scaled space so the surrounding <main>
-            // can scroll when the user zooms in past the viewport.
-            const stageStyle: React.CSSProperties =
-              baseW != null && baseH != null
-                ? { width: baseW * zoom, height: baseH * zoom }
-                : { width: "100%", height: "100%" };
-            const wrapperBaseClass = cn(
+          <div
+            ref={containerRef}
+            className={cn(
               "relative overflow-hidden rounded-lg border border-border bg-canvas shadow-panel",
               !customSize && currentPreset.id === "fit" && zoom === 1 ? "h-full w-full" : "shrink-0",
-            );
-            const wrapperStyle: React.CSSProperties =
-              baseW != null && baseH != null
-                ? {
-                    width: baseW,
-                    height: baseH,
-                    transform: zoom === 1 ? undefined : `scale(${zoom})`,
-                    transformOrigin: "top left",
-                  }
-                : zoom === 1
-                ? undefined
-                : {
-                    width: `${100 / zoom}%`,
-                    height: `${100 / zoom}%`,
-                    transform: `scale(${zoom})`,
-                    transformOrigin: "top left",
-                  };
-            return (
-              <div style={stageStyle} className="shrink-0">
-                <div ref={containerRef} className={wrapperBaseClass} style={wrapperStyle}>
+            )}
+            style={(() => {
+              if (customSize) {
+                return { width: customSize.width * zoom, height: customSize.height * zoom };
+              }
+              if (currentPreset.id === "fit") {
+                return zoom === 1
+                  ? undefined
+                  : { width: `${100 * zoom}%`, height: `${100 * zoom}%` };
+              }
+              return { width: currentPreset.width * zoom, height: currentPreset.height * zoom };
+            })()}
+          >
             <canvas
               ref={canvasRef}
               className="absolute inset-0 block h-full w-full select-none"
