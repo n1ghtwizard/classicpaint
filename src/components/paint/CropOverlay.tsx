@@ -42,11 +42,16 @@ export function CropOverlay({ cssWidth, cssHeight, aspect, onCancel, onConfirm }
   }, [onCancel, onConfirm, rect]);
 
   const localPos = (e: React.PointerEvent | PointerEvent) => {
-    const r = overlayRef.current!.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    const overlay = overlayRef.current!;
+    const r = overlay.getBoundingClientRect();
+    return {
+      x: r.width ? ((e.clientX - r.left) / r.width) * overlay.clientWidth : 0,
+      y: r.height ? ((e.clientY - r.top) / r.height) * overlay.clientHeight : 0,
+    };
   };
 
   const onDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
     const p = localPos(e);
