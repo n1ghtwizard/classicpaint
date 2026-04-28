@@ -44,8 +44,9 @@ export function SelectionLayer({ selection, onChange, onCommit }: Props) {
       const drag = dragRef.current;
       const cur = selRef.current;
       if (!drag || !cur) return;
-      const dx = e.clientX - drag.startPointer.x;
-      const dy = e.clientY - drag.startPointer.y;
+      const p = localPos(e);
+      const dx = p.x - drag.startPointer.x;
+      const dy = p.y - drag.startPointer.y;
       onChangeRef.current({
         ...cur,
         x: drag.startX + dx,
@@ -78,11 +79,22 @@ export function SelectionLayer({ selection, onChange, onCommit }: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onCommit]);
 
+  const localPos = (e: React.PointerEvent | PointerEvent) => {
+    const overlay = overlayRef.current;
+    if (!overlay) return { x: 0, y: 0 };
+    const rect = overlay.getBoundingClientRect();
+    return {
+      x: rect.width ? ((e.clientX - rect.left) / rect.width) * overlay.clientWidth : 0,
+      y: rect.height ? ((e.clientY - rect.top) / rect.height) * overlay.clientHeight : 0,
+    };
+  };
+
   const startDrag = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
     dragRef.current = {
-      startPointer: { x: e.clientX, y: e.clientY },
+      startPointer: localPos(e),
       startX: selection.x,
       startY: selection.y,
     };

@@ -44,8 +44,7 @@ export function ShapeTransformer({ shape, onChange, onCommit }: Props) {
       const drag = dragRef.current;
       const overlay = overlayRef.current;
       if (!drag || !overlay) return;
-      const rect = overlay.getBoundingClientRect();
-      const pointer = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      const pointer = localPos(e, overlay);
       const next = applyDrag(drag, pointer, e.shiftKey);
       onChangeRef.current(next);
       force((n) => n + 1);
@@ -80,14 +79,14 @@ export function ShapeTransformer({ shape, onChange, onCommit }: Props) {
   }, [onCommit]);
 
   const startDrag = (handle: HandleId) => (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
     const overlay = overlayRef.current;
     if (!overlay) return;
-    const rect = overlay.getBoundingClientRect();
     dragRef.current = {
       handle,
-      startPointer: { x: e.clientX - rect.left, y: e.clientY - rect.top },
+      startPointer: localPos(e, overlay),
       startShape: { ...shapeRef.current },
     };
   };
@@ -179,6 +178,14 @@ export function ShapeTransformer({ shape, onChange, onCommit }: Props) {
       />
     </div>
   );
+}
+
+function localPos(e: React.PointerEvent | PointerEvent, overlay: HTMLDivElement) {
+  const rect = overlay.getBoundingClientRect();
+  return {
+    x: rect.width ? ((e.clientX - rect.left) / rect.width) * overlay.clientWidth : 0,
+    y: rect.height ? ((e.clientY - rect.top) / rect.height) * overlay.clientHeight : 0,
+  };
 }
 
 function cursorForHandle(id: keyof typeof HANDLE_OFFSETS, rotation: number): string {

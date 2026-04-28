@@ -31,8 +31,12 @@ export function PolylineEditor({ draft, cssWidth, cssHeight, onChange, onCancel,
   const dragIdxRef = useRef<number | null>(null);
 
   const localPos = (e: React.PointerEvent | PointerEvent) => {
-    const r = overlayRef.current!.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top };
+    const overlay = overlayRef.current!;
+    const r = overlay.getBoundingClientRect();
+    return {
+      x: r.width ? ((e.clientX - r.left) / r.width) * overlay.clientWidth : 0,
+      y: r.height ? ((e.clientY - r.top) / r.height) * overlay.clientHeight : 0,
+    };
   };
 
   useEffect(() => {
@@ -47,6 +51,7 @@ export function PolylineEditor({ draft, cssWidth, cssHeight, onChange, onCancel,
   const placing = draft.points.length < draft.pointCount;
 
   const onDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
     const p = localPos(e);

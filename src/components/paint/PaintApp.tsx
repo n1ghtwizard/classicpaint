@@ -184,6 +184,12 @@ interface Point {
   y: number;
 }
 
+interface AppClipboard {
+  imageData: ImageData;
+  w: number;
+  h: number;
+}
+
 interface TextEditor {
   x: number;
   y: number;
@@ -246,12 +252,15 @@ export const PaintApp = () => {
   const [presetId, setPresetId] = useState<CanvasPreset["id"]>("fit");
   // Custom canvas size (e.g. after a crop) — overrides preset sizing.
   const [customSize, setCustomSize] = useState<{ width: number; height: number } | null>(null);
+  const [canvasSize, setCanvasSize] = useState<{ width: number; height: number }>({ width: 0, height: 0 });
   const [zoom, setZoom] = useState(1);
   const ZOOM_MIN = 0.1;
   const ZOOM_MAX = 8;
   const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const appClipboardRef = useRef<AppClipboard | null>(null);
   const panRef = useRef<{ startX: number; startY: number; scrollLeft: number; scrollTop: number; moved: boolean } | null>(null);
+  const suppressContextMenuRef = useRef(false);
   const mainRef = useRef<HTMLElement | null>(null);
   const [confirmNew, setConfirmNew] = useState(false);
 
@@ -373,11 +382,22 @@ export const PaintApp = () => {
     // marquee is drawn separately via overlay div
   }, [activeShape, placedShapes, selection, clearPreview, renderSelectionToPreview]);
 
+  const getFitCanvasSize = useCallback(() => {
+    const main = mainRef.current;
+    if (!main) return { width: 1, height: 1 };
+    const style = window.getComputedStyle(main);
+    const padX = parseFloat(style.paddingLeft || "0") + parseFloat(style.paddingRight || "0");
+    const padY = parseFloat(style.paddingTop || "0") + parseFloat(style.paddingBottom || "0");
+    return {
+      width: Math.max(1, Math.floor(main.clientWidth - padX - 32)),
+      height: Math.max(1, Math.floor(main.clientHeight - padY - 32)),
+    };
+  }, []);
+
   const resizeCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const preview = previewRef.current;
-    const container = containerRef.current;
-    if (!canvas || !preview || !container) return;
+    if (!canvas || !preview) return;
 
     const ratio = window.devicePixelRatio || 1;
     const preset = PRESETS.find((p) => p.id === presetId)!;
@@ -388,8 +408,9 @@ export const PaintApp = () => {
       cssW = customSize.width;
       cssH = customSize.height;
     } else if (preset.id === "fit") {
-      cssW = Math.floor(container.clientWidth);
-      cssH = Math.floor(container.clientHeight);
+      const fit = getFitCanvasSize();
+      cssW = fit.width;
+      cssH = fit.height;
     } else {
       cssW = preset.width;
       cssH = preset.height;
@@ -416,6 +437,10 @@ export const PaintApp = () => {
       if (cx) cx.setTransform(ratio, 0, 0, ratio, 0, 0);
     }
 
+    setCanvasSize((prevSize) =>
+      prevSize.width === cssW && prevSize.height === cssH ? prevSize : { width: cssW, height: cssH },
+    );
+
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.fillStyle = "#ffffff";
@@ -428,7 +453,7 @@ export const PaintApp = () => {
 
     // Re-render any active shape on top of the resized preview.
     renderActiveShapeToPreview();
-  }, [presetId, customSize, renderActiveShapeToPreview]);
+  }, [presetId, customSize, getFitCanvasSize, renderActiveShapeToPreview]);
 
   useEffect(() => {
     resizeCanvas();
@@ -438,7 +463,7 @@ export const PaintApp = () => {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => resizeCanvas());
     });
-    if (containerRef.current) ro.observe(containerRef.current);
+    if (mainRef.current) ro.observe(mainRef.current);
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
@@ -482,72 +507,94 @@ export const PaintApp = () => {
     pushHistory();
   }, [clearPreview]);
 
-  // Build a PNG blob from a region of the main canvas (CSS pixel space).
-  const canvasRegionToBlob = useCallback(
-    async (cssX: number, cssY: number, cssW: number, cssH: number): Promise<Blob | null> => {
-      const canvas = canvasRef.current;
-      if (!canvas) return null;
-      const ratio = window.devicePixelRatio || 1;
-      const off = document.createElement("canvas");
-      off.width = Math.max(1, Math.floor(cssW * ratio));
-      off.height = Math.max(1, Math.floor(cssH * ratio));
-      const octx = off.getContext("2d");
-      if (!octx) return null;
-      octx.drawImage(
-        canvas,
-        Math.floor(cssX * ratio), Math.floor(cssY * ratio),
-        off.width, off.height,
-        0, 0, off.width, off.height,
-      );
-      return await new Promise<Blob | null>((resolve) =>
-        off.toBlob((b) => resolve(b), "image/png"),
-      );
-    },
-    [],
-  );
+  const cloneImageData = (data: ImageData) =>
+    new ImageData(new Uint8ClampedArray(data.data), data.width, data.height);
 
-  // Copy the current floating selection (or the whole canvas, if no selection)
-  // to the system clipboard as a PNG image.
-  const copyToClipboard = useCallback(async () => {
+  const clipboardToBlob = async (clip: AppClipboard): Promise<Blob | null> => {
+    const tmp = document.createElement("canvas");
+    tmp.width = clip.imageData.width;
+    tmp.height = clip.imageData.height;
+    const tctx = tmp.getContext("2d");
+    if (!tctx) return null;
+    tctx.putImageData(clip.imageData, 0, 0);
+    return await new Promise<Blob | null>((resolve) => tmp.toBlob((b) => resolve(b), "image/png"));
+  };
+
+  const writeSystemClipboard = async (clip: AppClipboard) => {
     try {
-      const sel = selectionRef.current;
-      const canvas = canvasRef.current;
-      if (!canvas) return false;
-      let blob: Blob | null = null;
-      if (sel) {
-        const tmp = document.createElement("canvas");
-        tmp.width = sel.imageData.width;
-        tmp.height = sel.imageData.height;
-        const tctx = tmp.getContext("2d");
-        if (!tctx) return false;
-        tctx.putImageData(sel.imageData, 0, 0);
-        blob = await new Promise<Blob | null>((r) => tmp.toBlob((b) => r(b), "image/png"));
-      } else {
-        const ratio = window.devicePixelRatio || 1;
-        blob = await canvasRegionToBlob(0, 0, canvas.width / ratio, canvas.height / ratio);
-      }
-      if (!blob) return false;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const Item = (window as any).ClipboardItem;
       if (!Item || !navigator.clipboard?.write) return false;
+      const blob = await clipboardToBlob(clip);
+      if (!blob) return false;
       await navigator.clipboard.write([new Item({ "image/png": blob })]);
       return true;
     } catch {
       return false;
     }
-  }, [canvasRegionToBlob]);
+  };
+
+  // Copy the current floating selection, or the flattened canvas if no selection.
+  // Always stores an internal NeoPaint clipboard so copy/paste works even when
+  // the browser blocks system image clipboard access.
+  const copyToClipboard = useCallback(async () => {
+    const sel = selectionRef.current;
+    let clip: AppClipboard | null = null;
+
+    if (sel) {
+      clip = { imageData: cloneImageData(sel.imageData), w: sel.w, h: sel.h };
+    } else {
+      const out = flattenToCanvas();
+      const ctx = out?.getContext("2d");
+      if (!out || !ctx) {
+        toast.error("Nothing to copy");
+        return false;
+      }
+      const ratio = window.devicePixelRatio || 1;
+      const data = ctx.getImageData(0, 0, out.width, out.height);
+      clip = { imageData: data, w: out.width / ratio, h: out.height / ratio };
+    }
+
+    appClipboardRef.current = clip;
+    const systemOk = await writeSystemClipboard(clip);
+    toast.success(systemOk ? "Copied" : "Copied inside NeoPaint");
+    return true;
+  }, []);
 
   const cutToClipboard = useCallback(async () => {
+    if (!selectionRef.current) return false;
     const ok = await copyToClipboard();
     if (!ok) return false;
-    if (selectionRef.current) {
-      // Drop floating selection without restoring it — that's the "cut".
-      setSelection(null);
-      clearPreview();
-      pushHistory();
-    }
+    // Drop floating selection without restoring it — that's the "cut".
+    setSelection(null);
+    clearPreview();
+    pushHistory();
+    toast.success("Cut");
     return true;
   }, [copyToClipboard, clearPreview]);
+
+  const placeClipboardAsSelection = useCallback((clip: AppClipboard) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return false;
+    const ratio = window.devicePixelRatio || 1;
+    const cssW = canvas.width / ratio;
+    const cssH = canvas.height / ratio;
+    const w = Math.min(clip.w, cssW);
+    const h = Math.min(clip.h, cssH);
+    if (activeShapeRef.current) commitActiveShape();
+    if (selectionRef.current) commitSelection();
+    setSelection({
+      originX: Math.max(0, (cssW - w) / 2),
+      originY: Math.max(0, (cssH - h) / 2),
+      x: Math.max(0, (cssW - w) / 2),
+      y: Math.max(0, (cssH - h) / 2),
+      w,
+      h,
+      imageData: cloneImageData(clip.imageData),
+    });
+    setTool("select");
+    return true;
+  }, [commitActiveShape, commitSelection]);
 
   // Place a PNG blob on the canvas as a draggable floating selection. Shared
   // by the global paste handler and the right-click "Paste" menu item.
@@ -573,38 +620,40 @@ export const PaintApp = () => {
       if (!octx) return;
       octx.drawImage(img, 0, 0, off.width, off.height);
       const data = octx.getImageData(0, 0, off.width, off.height);
-      if (activeShapeRef.current) commitActiveShape();
-      if (selectionRef.current) commitSelection();
-      setSelection({
-        originX: (cssW - w) / 2,
-        originY: (cssH - h) / 2,
-        x: (cssW - w) / 2,
-        y: (cssH - h) / 2,
-        w, h,
-        imageData: data,
-      });
-      setTool("select");
+      placeClipboardAsSelection({ imageData: data, w, h });
     };
     img.src = url;
-  }, [commitSelection]);
+  }, [placeClipboardAsSelection]);
 
   const pasteFromClipboard = useCallback(async () => {
+    const internal = appClipboardRef.current;
+    if (internal && placeClipboardAsSelection(internal)) {
+      toast.success("Pasted");
+      return true;
+    }
+
     try {
-      if (!navigator.clipboard?.read) return false;
+      if (!navigator.clipboard?.read) {
+        toast.error("Clipboard image access is blocked");
+        return false;
+      }
       const items = await navigator.clipboard.read();
       for (const item of items) {
         const type = item.types.find((t) => t.startsWith("image/"));
         if (type) {
           const blob = await item.getType(type);
           placeBlobAsSelection(blob);
+          toast.success("Pasted");
           return true;
         }
       }
+      toast.error("No image found on clipboard");
       return false;
     } catch {
+      toast.error("Clipboard image access is blocked");
       return false;
     }
-  }, [placeBlobAsSelection]);
+  }, [placeBlobAsSelection, placeClipboardAsSelection]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -631,6 +680,13 @@ export const PaintApp = () => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x") {
         e.preventDefault();
         cutToClipboard();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "v") {
+        if (appClipboardRef.current) {
+          e.preventDefault();
+          pasteFromClipboard();
+        }
         return;
       }
       if (e.key === "Escape") {
@@ -675,7 +731,7 @@ export const PaintApp = () => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textEditor, commitActiveShape, commitSelection, clearPreview, copyToClipboard, cutToClipboard]);
+  }, [textEditor, commitActiveShape, commitSelection, clearPreview, copyToClipboard, cutToClipboard, pasteFromClipboard]);
 
   useEffect(() => {
     if (textEditor) {
@@ -1052,7 +1108,7 @@ export const PaintApp = () => {
     setShapeKind(shape.kind);
   };
 
-  // Paste image from clipboard as a floating selection.
+  // Paste external image data from the browser clipboard event.
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement | null;
@@ -1064,52 +1120,15 @@ export const PaintApp = () => {
           const file = item.getAsFile();
           if (!file) continue;
           e.preventDefault();
-          const url = URL.createObjectURL(file);
-          const img = new Image();
-          img.onload = () => {
-            URL.revokeObjectURL(url);
-            const canvas = canvasRef.current;
-            if (!canvas) return;
-            const ratio = window.devicePixelRatio || 1;
-            const cssW = canvas.width / ratio;
-            const cssH = canvas.height / ratio;
-            // Scale to fit if larger than canvas.
-            let w = img.naturalWidth;
-            let h = img.naturalHeight;
-            const max = Math.min(cssW * 0.8, cssH * 0.8);
-            const scale = Math.min(1, max / Math.max(w, h));
-            w = w * scale;
-            h = h * scale;
-            // Render image into an offscreen canvas to grab ImageData.
-            const off = document.createElement("canvas");
-            off.width = Math.max(1, Math.floor(w * ratio));
-            off.height = Math.max(1, Math.floor(h * ratio));
-            const octx = off.getContext("2d");
-            if (!octx) return;
-            octx.drawImage(img, 0, 0, off.width, off.height);
-            const data = octx.getImageData(0, 0, off.width, off.height);
-            if (activeShapeRef.current) commitActiveShape();
-            if (selectionRef.current) commitSelection();
-            setSelection({
-              originX: (cssW - w) / 2,
-              originY: (cssH - h) / 2,
-              x: (cssW - w) / 2,
-              y: (cssH - h) / 2,
-              w,
-              h,
-              imageData: data,
-            });
-            setTool("select");
-          };
-          img.src = url;
+          placeBlobAsSelection(file);
+          toast.success("Pasted");
           return;
         }
       }
     };
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [placeBlobAsSelection]);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     // Right- or middle-click is reserved for pan / context menu — never draw.
@@ -1322,7 +1341,7 @@ export const PaintApp = () => {
 
   // Composite the bitmap canvas + all placed/active shapes + selection into
   // a single canvas. Used by export and by paste/selection operations.
-  const flattenToCanvas = (): HTMLCanvasElement | null => {
+  function flattenToCanvas(): HTMLCanvasElement | null {
     const canvas = canvasRef.current;
     if (!canvas) return null;
     const out = document.createElement("canvas");
@@ -1338,7 +1357,7 @@ export const PaintApp = () => {
     for (const s of placedShapesRef.current) renderShape(ctx, s);
     if (activeShapeRef.current) renderShape(ctx, activeShapeRef.current);
     return out;
-  };
+  }
 
   const exportImage = (format: "png" | "jpg" | "webp" | "pdf") => {
     if (activeShapeRef.current) commitActiveShape();
@@ -1453,6 +1472,7 @@ export const PaintApp = () => {
     preview.height = canvas.height;
     preview.style.width = `${cssW}px`;
     preview.style.height = `${cssH}px`;
+    setCanvasSize({ width: cssW, height: cssH });
     const ctx = canvas.getContext("2d");
     const pctx = preview.getContext("2d");
     if (!ctx || !pctx) return;
@@ -1502,8 +1522,8 @@ export const PaintApp = () => {
     BRUSHES.find((b) => b.id === tool) ?? BRUSHES.find((b) => b.id === lastBrush) ?? BRUSHES[0];
   const BrushIcon = currentBrush.icon;
   const isBrushActive = BRUSH_TOOLS.includes(tool) || tool === "eraser" || tool === "fill" || tool === "picker";
-  const containerRect = containerRef.current
-    ? { width: containerRef.current.clientWidth, height: containerRef.current.clientHeight }
+  const containerRect = canvasSize.width > 0 && canvasSize.height > 0
+    ? { width: canvasSize.width, height: canvasSize.height }
     : undefined;
 
   return (
@@ -2096,7 +2116,7 @@ export const PaintApp = () => {
         {/* Canvas area */}
         <main
           ref={mainRef}
-          className="relative flex flex-1 items-center justify-center overflow-auto bg-secondary p-4"
+          className="relative flex-1 overflow-auto bg-secondary"
           onWheel={(e) => {
             if (!(e.ctrlKey || e.metaKey)) return;
             e.preventDefault();
@@ -2106,14 +2126,22 @@ export const PaintApp = () => {
           onContextMenu={(e) => {
             // Always suppress the native menu — we either pan or show our own.
             e.preventDefault();
-            if (panRef.current?.moved) return;
+            const surface = containerRef.current;
+            if (!surface || !surface.contains(e.target as Node)) return;
+            if (panRef.current?.moved || suppressContextMenuRef.current) {
+              suppressContextMenuRef.current = false;
+              return;
+            }
             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
             setCtxMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top });
           }}
           onPointerDown={(e) => {
             if (e.button !== 2) return;
             const main = mainRef.current;
-            if (!main) return;
+            const surface = containerRef.current;
+            if (!main || !surface || !surface.contains(e.target as Node)) return;
+            e.preventDefault();
+            suppressContextMenuRef.current = false;
             panRef.current = {
               startX: e.clientX,
               startY: e.clientY,
@@ -2128,9 +2156,13 @@ export const PaintApp = () => {
             const p = panRef.current;
             const main = mainRef.current;
             if (!p || !main) return;
+            e.preventDefault();
             const dx = e.clientX - p.startX;
             const dy = e.clientY - p.startY;
-            if (!p.moved && Math.hypot(dx, dy) > 4) p.moved = true;
+            if (!p.moved && Math.hypot(dx, dy) > 4) {
+              p.moved = true;
+              suppressContextMenuRef.current = true;
+            }
             if (p.moved) {
               main.scrollLeft = p.scrollLeft - dx;
               main.scrollTop = p.scrollTop - dy;
@@ -2138,6 +2170,7 @@ export const PaintApp = () => {
           }}
           onPointerUp={(e) => {
             if (e.button !== 2) return;
+            e.preventDefault();
             try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ }
             // Keep panRef.moved through the synthesized contextmenu event so
             // we can suppress the menu when the user actually panned, then
@@ -2148,23 +2181,29 @@ export const PaintApp = () => {
           style={{ cursor: panRef.current?.moved ? "grabbing" : undefined }}
         >
           <div
-            ref={containerRef}
-            className={cn(
-              "relative overflow-hidden rounded-lg border border-border bg-canvas shadow-panel",
-              !customSize && currentPreset.id === "fit" && zoom === 1 ? "h-full w-full" : "shrink-0",
-            )}
-            style={(() => {
-              if (customSize) {
-                return { width: customSize.width * zoom, height: customSize.height * zoom };
-              }
-              if (currentPreset.id === "fit") {
-                return zoom === 1
-                  ? undefined
-                  : { width: `${100 * zoom}%`, height: `${100 * zoom}%` };
-              }
-              return { width: currentPreset.width * zoom, height: currentPreset.height * zoom };
-            })()}
+            className="flex min-h-full min-w-full items-center justify-center p-4"
+            style={{
+              width: Math.max(canvasSize.width * zoom + 32, mainRef.current?.clientWidth ?? 0),
+              height: Math.max(canvasSize.height * zoom + 32, mainRef.current?.clientHeight ?? 0),
+            }}
           >
+            <div
+              className="relative shrink-0"
+              style={{
+                width: Math.max(1, canvasSize.width * zoom),
+                height: Math.max(1, canvasSize.height * zoom),
+              }}
+            >
+              <div
+                ref={containerRef}
+                className="relative origin-top-left overflow-hidden rounded-lg border border-border bg-canvas shadow-panel"
+                style={{
+                  width: Math.max(1, canvasSize.width),
+                  height: Math.max(1, canvasSize.height),
+                  transform: `scale(${zoom})`,
+                  transformOrigin: "top left",
+                }}
+              >
             <canvas
               ref={canvasRef}
               className="absolute inset-0 block h-full w-full select-none"
@@ -2312,6 +2351,8 @@ export const PaintApp = () => {
                 />
               </div>
             )}
+              </div>
+            </div>
           </div>
           {ctxMenu && (
             <>
