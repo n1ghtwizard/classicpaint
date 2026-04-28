@@ -1523,44 +1523,41 @@ export const PaintApp = () => {
           <div className="mx-2 h-5 w-px bg-border" />
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setZoom((z) => clampZoom(Math.round((z - 0.1) * 100) / 100))}
-                disabled={zoom <= ZOOM_MIN + 0.001}
-                aria-label="Zoom out"
-              >
-                <ZoomOut className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center gap-2 px-1">
+                <ZoomOut className="h-3.5 w-3.5 text-muted-foreground" />
+                <div className="w-32">
+                  <Slider
+                    value={[
+                      Math.round(
+                        ((Math.log(zoom) - Math.log(ZOOM_MIN)) /
+                          (Math.log(ZOOM_MAX) - Math.log(ZOOM_MIN))) *
+                          100,
+                      ),
+                    ]}
+                    min={0}
+                    max={100}
+                    step={1}
+                    onValueChange={(v) => {
+                      const t = v[0] / 100;
+                      const z =
+                        Math.exp(Math.log(ZOOM_MIN) + t * (Math.log(ZOOM_MAX) - Math.log(ZOOM_MIN)));
+                      setZoom(clampZoom(Math.round(z * 100) / 100));
+                    }}
+                    onDoubleClick={() => setZoom(1)}
+                    aria-label="Zoom"
+                  />
+                </div>
+                <ZoomIn className="h-3.5 w-3.5 text-muted-foreground" />
+                <button
+                  type="button"
+                  onClick={() => setZoom(1)}
+                  className="min-w-[44px] rounded px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+              </div>
             </TooltipTrigger>
-            <TooltipContent>Zoom out</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 min-w-[52px] px-2 text-xs tabular-nums"
-                onClick={() => setZoom(1)}
-              >
-                {Math.round(zoom * 100)}%
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Reset zoom (100%)</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setZoom((z) => clampZoom(Math.round((z + 0.1) * 100) / 100))}
-                disabled={zoom >= ZOOM_MAX - 0.001}
-                aria-label="Zoom in"
-              >
-                <ZoomIn className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Zoom in</TooltipContent>
+            <TooltipContent>Drag to zoom · click % to reset</TooltipContent>
           </Tooltip>
           <div className="mx-2 h-5 w-px bg-border" />
           <Tooltip>
