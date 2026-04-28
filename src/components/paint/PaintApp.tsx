@@ -618,8 +618,11 @@ export const PaintApp = () => {
   const getPos = (e: PointerEvent | React.PointerEvent): Point => {
     const canvas = previewRef.current ?? canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    const z = zoomRef.current || 1;
-    return { x: (e.clientX - rect.left) / z, y: (e.clientY - rect.top) / z };
+    const dpr = window.devicePixelRatio || 1;
+    // Map screen coords to logical canvas coords (canvas pixels / dpr).
+    const sx = rect.width ? canvas.width / rect.width / dpr : 1;
+    const sy = rect.height ? canvas.height / rect.height / dpr : 1;
+    return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
   };
 
   const flushStroke = () => {
@@ -1520,44 +1523,41 @@ export const PaintApp = () => {
           <div className="mx-2 h-5 w-px bg-border" />
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setZoom((z) => clampZoom(Math.round((z - 0.1) * 100) / 100))}
-                disabled={zoom <= ZOOM_MIN + 0.001}
-                aria-label="Zoom out"
-              >
-                <ZoomOut className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center gap-2 px-1">
+                <ZoomOut className="h-3.5 w-3.5 text-muted-foreground" />
+                <div className="w-32">
+                  <Slider
+                    value={[
+                      Math.round(
+                        ((Math.log(zoom) - Math.log(ZOOM_MIN)) /
+                          (Math.log(ZOOM_MAX) - Math.log(ZOOM_MIN))) *
+                          100,
+                      ),
+                    ]}
+                    min={0}
+                    max={100}
+                    step={1}
+                    onValueChange={(v) => {
+                      const t = v[0] / 100;
+                      const z =
+                        Math.exp(Math.log(ZOOM_MIN) + t * (Math.log(ZOOM_MAX) - Math.log(ZOOM_MIN)));
+                      setZoom(clampZoom(Math.round(z * 100) / 100));
+                    }}
+                    onDoubleClick={() => setZoom(1)}
+                    aria-label="Zoom"
+                  />
+                </div>
+                <ZoomIn className="h-3.5 w-3.5 text-muted-foreground" />
+                <button
+                  type="button"
+                  onClick={() => setZoom(1)}
+                  className="min-w-[44px] rounded px-1 text-xs tabular-nums text-muted-foreground hover:text-foreground"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
+              </div>
             </TooltipTrigger>
-            <TooltipContent>Zoom out</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-8 min-w-[52px] px-2 text-xs tabular-nums"
-                onClick={() => setZoom(1)}
-              >
-                {Math.round(zoom * 100)}%
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Reset zoom (100%)</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setZoom((z) => clampZoom(Math.round((z + 0.1) * 100) / 100))}
-                disabled={zoom >= ZOOM_MAX - 0.001}
-                aria-label="Zoom in"
-              >
-                <ZoomIn className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Zoom in</TooltipContent>
+            <TooltipContent>Drag to zoom · click % to reset</TooltipContent>
           </Tooltip>
           <div className="mx-2 h-5 w-px bg-border" />
           <Tooltip>
@@ -1964,46 +1964,24 @@ export const PaintApp = () => {
             setZoom((z) => clampZoom(Math.round((z + delta) * 100) / 100));
           }}
         >
-          {(() => {
-            const baseW = customSize
-              ? customSize.width
-              : currentPreset.id === "fit"
-              ? null
-              : currentPreset.width;
-            const baseH = customSize
-              ? customSize.height
-              : currentPreset.id === "fit"
-              ? null
-              : currentPreset.height;
-            // Outer stage reserves the scaled space so the surrounding <main>
-            // can scroll when the user zooms in past the viewport.
-            const stageStyle: React.CSSProperties =
-              baseW != null && baseH != null
-                ? { width: baseW * zoom, height: baseH * zoom }
-                : { width: "100%", height: "100%" };
-            const wrapperBaseClass = cn(
+          <div
+            ref={containerRef}
+            className={cn(
               "relative overflow-hidden rounded-lg border border-border bg-canvas shadow-panel",
               !customSize && currentPreset.id === "fit" && zoom === 1 ? "h-full w-full" : "shrink-0",
-            );
-            const wrapperStyle: React.CSSProperties =
-              baseW != null && baseH != null
-                ? {
-                    width: baseW,
-                    height: baseH,
-                    transform: zoom === 1 ? undefined : `scale(${zoom})`,
-                    transformOrigin: "top left",
-                  }
-                : zoom === 1
-                ? undefined
-                : {
-                    width: `${100 / zoom}%`,
-                    height: `${100 / zoom}%`,
-                    transform: `scale(${zoom})`,
-                    transformOrigin: "top left",
-                  };
-            return (
-              <div style={stageStyle} className="shrink-0">
-                <div ref={containerRef} className={wrapperBaseClass} style={wrapperStyle}>
+            )}
+            style={(() => {
+              if (customSize) {
+                return { width: customSize.width * zoom, height: customSize.height * zoom };
+              }
+              if (currentPreset.id === "fit") {
+                return zoom === 1
+                  ? undefined
+                  : { width: `${100 * zoom}%`, height: `${100 * zoom}%` };
+              }
+              return { width: currentPreset.width * zoom, height: currentPreset.height * zoom };
+            })()}
+          >
             <canvas
               ref={canvasRef}
               className="absolute inset-0 block h-full w-full select-none"
@@ -2151,10 +2129,7 @@ export const PaintApp = () => {
                 />
               </div>
             )}
-                </div>
-              </div>
-            );
-          })()}
+          </div>
         </main>
       </div>
 
