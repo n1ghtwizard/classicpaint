@@ -2095,13 +2095,57 @@ export const PaintApp = () => {
 
         {/* Canvas area */}
         <main
-          className="flex flex-1 items-center justify-center overflow-auto bg-secondary p-4"
+          ref={mainRef}
+          className="relative flex flex-1 items-center justify-center overflow-auto bg-secondary p-4"
           onWheel={(e) => {
             if (!(e.ctrlKey || e.metaKey)) return;
             e.preventDefault();
             const delta = e.deltaY > 0 ? -0.1 : 0.1;
             setZoom((z) => clampZoom(Math.round((z + delta) * 100) / 100));
           }}
+          onContextMenu={(e) => {
+            // Always suppress the native menu — we either pan or show our own.
+            e.preventDefault();
+            if (panRef.current?.moved) return;
+            const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+            setCtxMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+          }}
+          onPointerDown={(e) => {
+            if (e.button !== 2) return;
+            const main = mainRef.current;
+            if (!main) return;
+            panRef.current = {
+              startX: e.clientX,
+              startY: e.clientY,
+              scrollLeft: main.scrollLeft,
+              scrollTop: main.scrollTop,
+              moved: false,
+            };
+            (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            setCtxMenu(null);
+          }}
+          onPointerMove={(e) => {
+            const p = panRef.current;
+            const main = mainRef.current;
+            if (!p || !main) return;
+            const dx = e.clientX - p.startX;
+            const dy = e.clientY - p.startY;
+            if (!p.moved && Math.hypot(dx, dy) > 4) p.moved = true;
+            if (p.moved) {
+              main.scrollLeft = p.scrollLeft - dx;
+              main.scrollTop = p.scrollTop - dy;
+            }
+          }}
+          onPointerUp={(e) => {
+            if (e.button !== 2) return;
+            try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ }
+            // Keep panRef.moved through the synthesized contextmenu event so
+            // we can suppress the menu when the user actually panned, then
+            // clear it on the next frame.
+            requestAnimationFrame(() => { panRef.current = null; });
+          }}
+          onPointerCancel={() => { panRef.current = null; }}
+          style={{ cursor: panRef.current?.moved ? "grabbing" : undefined }}
         >
           <div
             ref={containerRef}
