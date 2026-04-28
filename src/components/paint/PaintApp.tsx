@@ -27,6 +27,8 @@ import {
   Palette,
   Crop,
   Spline,
+  ZoomIn,
+  ZoomOut,
   LogIn,
   LogOut,
   Save,
