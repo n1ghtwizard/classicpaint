@@ -418,7 +418,7 @@ export const PaintApp = () => {
 
     // Re-render any active shape on top of the resized preview.
     renderActiveShapeToPreview();
-  }, [presetId, renderActiveShapeToPreview]);
+  }, [presetId, customSize, renderActiveShapeToPreview]);
 
   useEffect(() => {
     resizeCanvas();
@@ -434,7 +434,7 @@ export const PaintApp = () => {
       ro.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetId]);
+  }, [presetId, customSize]);
 
   // Commit the current shape — moves it from the editing slot into the
   // placedShapes list (still vector / re-editable). Switches the tool back
