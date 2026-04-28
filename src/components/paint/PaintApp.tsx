@@ -1901,10 +1901,12 @@ export const PaintApp = () => {
             ref={containerRef}
             className={cn(
               "relative overflow-hidden rounded-lg border border-border bg-canvas shadow-panel",
-              currentPreset.id === "fit" ? "h-full w-full" : "shrink-0",
+              !customSize && currentPreset.id === "fit" ? "h-full w-full" : "shrink-0",
             )}
             style={
-              currentPreset.id === "fit"
+              customSize
+                ? { width: customSize.width, height: customSize.height }
+                : currentPreset.id === "fit"
                 ? undefined
                 : { width: currentPreset.width, height: currentPreset.height }
             }
