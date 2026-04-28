@@ -1955,7 +1955,15 @@ export const PaintApp = () => {
         </aside>
 
         {/* Canvas area */}
-        <main className="flex flex-1 items-center justify-center overflow-auto bg-secondary p-4">
+        <main
+          className="flex flex-1 items-center justify-center overflow-auto bg-secondary p-4"
+          onWheel={(e) => {
+            if (!(e.ctrlKey || e.metaKey)) return;
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            setZoom((z) => clampZoom(Math.round((z + delta) * 100) / 100));
+          }}
+        >
           {(() => {
             const baseW = customSize
               ? customSize.width
