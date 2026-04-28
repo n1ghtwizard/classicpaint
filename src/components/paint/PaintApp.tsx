@@ -242,6 +242,8 @@ export const PaintApp = () => {
   const [textEditor, setTextEditor] = useState<TextEditor | null>(null);
 
   const [presetId, setPresetId] = useState<CanvasPreset["id"]>("fit");
+  // Custom canvas size (e.g. after a crop) — overrides preset sizing.
+  const [customSize, setCustomSize] = useState<{ width: number; height: number } | null>(null);
   const [confirmNew, setConfirmNew] = useState(false);
 
   // Crop state
@@ -371,7 +373,10 @@ export const PaintApp = () => {
 
     let cssW: number;
     let cssH: number;
-    if (preset.id === "fit") {
+    if (customSize) {
+      cssW = customSize.width;
+      cssH = customSize.height;
+    } else if (preset.id === "fit") {
       const r = container.getBoundingClientRect();
       cssW = Math.floor(r.width);
       cssH = Math.floor(r.height);
@@ -413,7 +418,7 @@ export const PaintApp = () => {
 
     // Re-render any active shape on top of the resized preview.
     renderActiveShapeToPreview();
-  }, [presetId, renderActiveShapeToPreview]);
+  }, [presetId, customSize, renderActiveShapeToPreview]);
 
   useEffect(() => {
     resizeCanvas();
@@ -429,7 +434,7 @@ export const PaintApp = () => {
       ro.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetId]);
+  }, [presetId, customSize]);
 
   // Commit the current shape — moves it from the editing slot into the
   // placedShapes list (still vector / re-editable). Switches the tool back
@@ -1217,6 +1222,7 @@ export const PaintApp = () => {
     const canvas = canvasRef.current;
     const ctx = getCtx();
     if (!canvas || !ctx) return;
+    if (rect.w < 4 || rect.h < 4) return;
     if (placedShapesRef.current.length > 0) {
       ctx.save();
       for (const s of placedShapesRef.current) renderShape(ctx, s);
@@ -1224,6 +1230,7 @@ export const PaintApp = () => {
       setPlacedShapes([]);
     }
     if (selectionRef.current) commitSelection();
+
     const ratio = window.devicePixelRatio || 1;
     const px = Math.max(0, Math.round(rect.x * ratio));
     const py = Math.max(0, Math.round(rect.y * ratio));
@@ -1231,37 +1238,38 @@ export const PaintApp = () => {
     const ph = Math.min(canvas.height - py, Math.round(rect.h * ratio));
     if (pw <= 0 || ph <= 0) return;
 
-    const tmp = document.createElement("canvas");
-    tmp.width = pw;
-    tmp.height = ph;
-    const tctx = tmp.getContext("2d");
-    if (!tctx) return;
-    tctx.drawImage(canvas, px, py, pw, ph, 0, 0, pw, ph);
+    // Snapshot the cropped region into a detached canvas.
+    const snapshot = document.createElement("canvas");
+    snapshot.width = pw;
+    snapshot.height = ph;
+    const sctx = snapshot.getContext("2d");
+    if (!sctx) return;
+    sctx.drawImage(canvas, px, py, pw, ph, 0, 0, pw, ph);
 
-    canvas.width = pw;
-    canvas.height = ph;
-    canvas.style.width = `${rect.w}px`;
-    canvas.style.height = `${rect.h}px`;
-    const preview = previewRef.current;
-    if (preview) {
-      preview.width = pw;
-      preview.height = ph;
-      preview.style.width = `${rect.w}px`;
-      preview.style.height = `${rect.h}px`;
-      const pctx = preview.getContext("2d");
-      if (pctx) pctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    }
-    const newCtx = canvas.getContext("2d");
-    if (!newCtx) return;
-    newCtx.fillStyle = "#ffffff";
-    newCtx.fillRect(0, 0, pw, ph);
-    newCtx.drawImage(tmp, 0, 0);
-    newCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    newCtx.lineCap = "round";
-    newCtx.lineJoin = "round";
-    setPresetId("fit");
-    pushHistory();
+    // Switch to a custom canvas size — resizeCanvas will rebuild the
+    // canvas at the new dimensions on the next layout pass.
     setTool("select");
+    setCustomSize({ width: rect.w, height: rect.h });
+
+    // After the layout/resize commits, paint the cropped snapshot back in.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const c = canvasRef.current;
+        const cx = c?.getContext("2d");
+        if (!c || !cx) return;
+        cx.save();
+        cx.setTransform(1, 0, 0, 1, 0, 0);
+        cx.clearRect(0, 0, c.width, c.height);
+        cx.fillStyle = "#ffffff";
+        cx.fillRect(0, 0, c.width, c.height);
+        cx.drawImage(snapshot, 0, 0);
+        cx.restore();
+        cx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        cx.lineCap = "round";
+        cx.lineJoin = "round";
+        pushHistory();
+      });
+    });
     toast.success("Cropped");
   };
 
@@ -1305,6 +1313,7 @@ export const PaintApp = () => {
     pctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
+    setCustomSize(null);
     setPresetId("fit");
     pushHistory();
     toast.success("Painting loaded");
@@ -1386,7 +1395,7 @@ export const PaintApp = () => {
                 {PRESETS.map((p) => (
                   <DropdownMenuItem
                     key={p.id}
-                    onSelect={() => setPresetId(p.id)}
+                    onSelect={() => { setCustomSize(null); setPresetId(p.id); }}
                     className={cn(
                       "flex items-center justify-between text-xs",
                       p.id === presetId && "bg-accent/10 text-accent",
@@ -1899,10 +1908,12 @@ export const PaintApp = () => {
             ref={containerRef}
             className={cn(
               "relative overflow-hidden rounded-lg border border-border bg-canvas shadow-panel",
-              currentPreset.id === "fit" ? "h-full w-full" : "shrink-0",
+              !customSize && currentPreset.id === "fit" ? "h-full w-full" : "shrink-0",
             )}
             style={
-              currentPreset.id === "fit"
+              customSize
+                ? { width: customSize.width, height: customSize.height }
+                : currentPreset.id === "fit"
                 ? undefined
                 : { width: currentPreset.width, height: currentPreset.height }
             }
@@ -2162,6 +2173,7 @@ export const PaintApp = () => {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
+                setCustomSize(null);
                 wipeCanvas();
                 setConfirmNew(false);
               }}
