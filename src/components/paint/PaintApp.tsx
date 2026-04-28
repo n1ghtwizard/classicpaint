@@ -1109,6 +1109,8 @@ export const PaintApp = () => {
   }, []);
 
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Right- or middle-click is reserved for pan / context menu — never draw.
+    if (e.button !== 0) return;
     e.preventDefault();
     (e.target as Element).setPointerCapture(e.pointerId);
     const pos = getPos(e);
