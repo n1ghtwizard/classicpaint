@@ -618,8 +618,11 @@ export const PaintApp = () => {
   const getPos = (e: PointerEvent | React.PointerEvent): Point => {
     const canvas = previewRef.current ?? canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    const z = zoomRef.current || 1;
-    return { x: (e.clientX - rect.left) / z, y: (e.clientY - rect.top) / z };
+    const dpr = window.devicePixelRatio || 1;
+    // Map screen coords to logical canvas coords (canvas pixels / dpr).
+    const sx = rect.width ? canvas.width / rect.width / dpr : 1;
+    const sy = rect.height ? canvas.height / rect.height / dpr : 1;
+    return { x: (e.clientX - rect.left) * sx, y: (e.clientY - rect.top) * sy };
   };
 
   const flushStroke = () => {
