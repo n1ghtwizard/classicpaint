@@ -1222,6 +1222,7 @@ export const PaintApp = () => {
     const canvas = canvasRef.current;
     const ctx = getCtx();
     if (!canvas || !ctx) return;
+    if (rect.w < 4 || rect.h < 4) return;
     if (placedShapesRef.current.length > 0) {
       ctx.save();
       for (const s of placedShapesRef.current) renderShape(ctx, s);
@@ -1229,6 +1230,7 @@ export const PaintApp = () => {
       setPlacedShapes([]);
     }
     if (selectionRef.current) commitSelection();
+
     const ratio = window.devicePixelRatio || 1;
     const px = Math.max(0, Math.round(rect.x * ratio));
     const py = Math.max(0, Math.round(rect.y * ratio));
@@ -1236,37 +1238,38 @@ export const PaintApp = () => {
     const ph = Math.min(canvas.height - py, Math.round(rect.h * ratio));
     if (pw <= 0 || ph <= 0) return;
 
-    const tmp = document.createElement("canvas");
-    tmp.width = pw;
-    tmp.height = ph;
-    const tctx = tmp.getContext("2d");
-    if (!tctx) return;
-    tctx.drawImage(canvas, px, py, pw, ph, 0, 0, pw, ph);
+    // Snapshot the cropped region into a detached canvas.
+    const snapshot = document.createElement("canvas");
+    snapshot.width = pw;
+    snapshot.height = ph;
+    const sctx = snapshot.getContext("2d");
+    if (!sctx) return;
+    sctx.drawImage(canvas, px, py, pw, ph, 0, 0, pw, ph);
 
-    canvas.width = pw;
-    canvas.height = ph;
-    canvas.style.width = `${rect.w}px`;
-    canvas.style.height = `${rect.h}px`;
-    const preview = previewRef.current;
-    if (preview) {
-      preview.width = pw;
-      preview.height = ph;
-      preview.style.width = `${rect.w}px`;
-      preview.style.height = `${rect.h}px`;
-      const pctx = preview.getContext("2d");
-      if (pctx) pctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    }
-    const newCtx = canvas.getContext("2d");
-    if (!newCtx) return;
-    newCtx.fillStyle = "#ffffff";
-    newCtx.fillRect(0, 0, pw, ph);
-    newCtx.drawImage(tmp, 0, 0);
-    newCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    newCtx.lineCap = "round";
-    newCtx.lineJoin = "round";
-    setPresetId("fit");
-    pushHistory();
+    // Switch to a custom canvas size — resizeCanvas will rebuild the
+    // canvas at the new dimensions on the next layout pass.
     setTool("select");
+    setCustomSize({ width: rect.w, height: rect.h });
+
+    // After the layout/resize commits, paint the cropped snapshot back in.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const c = canvasRef.current;
+        const cx = c?.getContext("2d");
+        if (!c || !cx) return;
+        cx.save();
+        cx.setTransform(1, 0, 0, 1, 0, 0);
+        cx.clearRect(0, 0, c.width, c.height);
+        cx.fillStyle = "#ffffff";
+        cx.fillRect(0, 0, c.width, c.height);
+        cx.drawImage(snapshot, 0, 0);
+        cx.restore();
+        cx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        cx.lineCap = "round";
+        cx.lineJoin = "round";
+        pushHistory();
+      });
+    });
     toast.success("Cropped");
   };
 
