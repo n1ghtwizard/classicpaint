@@ -27,6 +27,8 @@ import {
   Palette,
   Crop,
   Spline,
+  ZoomIn,
+  ZoomOut,
   LogIn,
   LogOut,
   Save,
@@ -244,6 +246,10 @@ export const PaintApp = () => {
   const [presetId, setPresetId] = useState<CanvasPreset["id"]>("fit");
   // Custom canvas size (e.g. after a crop) — overrides preset sizing.
   const [customSize, setCustomSize] = useState<{ width: number; height: number } | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const ZOOM_MIN = 0.1;
+  const ZOOM_MAX = 8;
+  const clampZoom = (z: number) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
   const [confirmNew, setConfirmNew] = useState(false);
 
   // Crop state
@@ -302,9 +308,11 @@ export const PaintApp = () => {
   const toolRef = useRef(tool);
   const colorRef = useRef(color);
   const sizeRef = useRef(size);
+  const zoomRef = useRef(zoom);
   toolRef.current = tool;
   colorRef.current = color;
   sizeRef.current = size;
+  zoomRef.current = zoom;
 
   const getCtx = () => canvasRef.current?.getContext("2d") ?? null;
   const getPreviewCtx = () => previewRef.current?.getContext("2d") ?? null;
@@ -377,9 +385,8 @@ export const PaintApp = () => {
       cssW = customSize.width;
       cssH = customSize.height;
     } else if (preset.id === "fit") {
-      const r = container.getBoundingClientRect();
-      cssW = Math.floor(r.width);
-      cssH = Math.floor(r.height);
+      cssW = Math.floor(container.clientWidth);
+      cssH = Math.floor(container.clientHeight);
     } else {
       cssW = preset.width;
       cssH = preset.height;
@@ -611,7 +618,8 @@ export const PaintApp = () => {
   const getPos = (e: PointerEvent | React.PointerEvent): Point => {
     const canvas = previewRef.current ?? canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const z = zoomRef.current || 1;
+    return { x: (e.clientX - rect.left) / z, y: (e.clientY - rect.top) / z };
   };
 
   const flushStroke = () => {
@@ -1352,7 +1360,9 @@ export const PaintApp = () => {
     BRUSHES.find((b) => b.id === tool) ?? BRUSHES.find((b) => b.id === lastBrush) ?? BRUSHES[0];
   const BrushIcon = currentBrush.icon;
   const isBrushActive = BRUSH_TOOLS.includes(tool) || tool === "eraser" || tool === "fill" || tool === "picker";
-  const containerRect = containerRef.current?.getBoundingClientRect();
+  const containerRect = containerRef.current
+    ? { width: containerRef.current.clientWidth, height: containerRef.current.clientHeight }
+    : undefined;
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
@@ -1506,6 +1516,48 @@ export const PaintApp = () => {
               </Button>
             </TooltipTrigger>
             <TooltipContent>Redo (⌘Y / ⌘⇧Z)</TooltipContent>
+          </Tooltip>
+          <div className="mx-2 h-5 w-px bg-border" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setZoom((z) => clampZoom(Math.round((z - 0.1) * 100) / 100))}
+                disabled={zoom <= ZOOM_MIN + 0.001}
+                aria-label="Zoom out"
+              >
+                <ZoomOut className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Zoom out</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 min-w-[52px] px-2 text-xs tabular-nums"
+                onClick={() => setZoom(1)}
+              >
+                {Math.round(zoom * 100)}%
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Reset zoom (100%)</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setZoom((z) => clampZoom(Math.round((z + 0.1) * 100) / 100))}
+                disabled={zoom >= ZOOM_MAX - 0.001}
+                aria-label="Zoom in"
+              >
+                <ZoomIn className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Zoom in</TooltipContent>
           </Tooltip>
           <div className="mx-2 h-5 w-px bg-border" />
           <Tooltip>
@@ -1903,21 +1955,55 @@ export const PaintApp = () => {
         </aside>
 
         {/* Canvas area */}
-        <main className="flex flex-1 items-center justify-center overflow-auto bg-secondary p-4">
-          <div
-            ref={containerRef}
-            className={cn(
+        <main
+          className="flex flex-1 items-center justify-center overflow-auto bg-secondary p-4"
+          onWheel={(e) => {
+            if (!(e.ctrlKey || e.metaKey)) return;
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.1 : 0.1;
+            setZoom((z) => clampZoom(Math.round((z + delta) * 100) / 100));
+          }}
+        >
+          {(() => {
+            const baseW = customSize
+              ? customSize.width
+              : currentPreset.id === "fit"
+              ? null
+              : currentPreset.width;
+            const baseH = customSize
+              ? customSize.height
+              : currentPreset.id === "fit"
+              ? null
+              : currentPreset.height;
+            // Outer stage reserves the scaled space so the surrounding <main>
+            // can scroll when the user zooms in past the viewport.
+            const stageStyle: React.CSSProperties =
+              baseW != null && baseH != null
+                ? { width: baseW * zoom, height: baseH * zoom }
+                : { width: "100%", height: "100%" };
+            const wrapperBaseClass = cn(
               "relative overflow-hidden rounded-lg border border-border bg-canvas shadow-panel",
-              !customSize && currentPreset.id === "fit" ? "h-full w-full" : "shrink-0",
-            )}
-            style={
-              customSize
-                ? { width: customSize.width, height: customSize.height }
-                : currentPreset.id === "fit"
+              !customSize && currentPreset.id === "fit" && zoom === 1 ? "h-full w-full" : "shrink-0",
+            );
+            const wrapperStyle: React.CSSProperties =
+              baseW != null && baseH != null
+                ? {
+                    width: baseW,
+                    height: baseH,
+                    transform: zoom === 1 ? undefined : `scale(${zoom})`,
+                    transformOrigin: "top left",
+                  }
+                : zoom === 1
                 ? undefined
-                : { width: currentPreset.width, height: currentPreset.height }
-            }
-          >
+                : {
+                    width: `${100 / zoom}%`,
+                    height: `${100 / zoom}%`,
+                    transform: `scale(${zoom})`,
+                    transformOrigin: "top left",
+                  };
+            return (
+              <div style={stageStyle} className="shrink-0">
+                <div ref={containerRef} className={wrapperBaseClass} style={wrapperStyle}>
             <canvas
               ref={canvasRef}
               className="absolute inset-0 block h-full w-full select-none"
@@ -2065,7 +2151,10 @@ export const PaintApp = () => {
                 />
               </div>
             )}
-          </div>
+                </div>
+              </div>
+            );
+          })()}
         </main>
       </div>
 
