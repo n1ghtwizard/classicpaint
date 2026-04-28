@@ -1913,20 +1913,46 @@ export const PaintApp = () => {
 
         {/* Canvas area */}
         <main className="flex flex-1 items-center justify-center overflow-auto bg-secondary p-4">
-          <div
-            ref={containerRef}
-            className={cn(
+          {(() => {
+            const baseW = customSize
+              ? customSize.width
+              : currentPreset.id === "fit"
+              ? null
+              : currentPreset.width;
+            const baseH = customSize
+              ? customSize.height
+              : currentPreset.id === "fit"
+              ? null
+              : currentPreset.height;
+            // Outer stage reserves the scaled space so the surrounding <main>
+            // can scroll when the user zooms in past the viewport.
+            const stageStyle: React.CSSProperties =
+              baseW != null && baseH != null
+                ? { width: baseW * zoom, height: baseH * zoom }
+                : { width: "100%", height: "100%" };
+            const wrapperBaseClass = cn(
               "relative overflow-hidden rounded-lg border border-border bg-canvas shadow-panel",
-              !customSize && currentPreset.id === "fit" ? "h-full w-full" : "shrink-0",
-            )}
-            style={
-              customSize
-                ? { width: customSize.width, height: customSize.height }
-                : currentPreset.id === "fit"
+              !customSize && currentPreset.id === "fit" && zoom === 1 ? "h-full w-full" : "shrink-0",
+            );
+            const wrapperStyle: React.CSSProperties =
+              baseW != null && baseH != null
+                ? {
+                    width: baseW,
+                    height: baseH,
+                    transform: zoom === 1 ? undefined : `scale(${zoom})`,
+                    transformOrigin: "top left",
+                  }
+                : zoom === 1
                 ? undefined
-                : { width: currentPreset.width, height: currentPreset.height }
-            }
-          >
+                : {
+                    width: `${100 / zoom}%`,
+                    height: `${100 / zoom}%`,
+                    transform: `scale(${zoom})`,
+                    transformOrigin: "top left",
+                  };
+            return (
+              <div style={stageStyle} className="shrink-0">
+                <div ref={containerRef} className={wrapperBaseClass} style={wrapperStyle}>
             <canvas
               ref={canvasRef}
               className="absolute inset-0 block h-full w-full select-none"
