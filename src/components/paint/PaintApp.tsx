@@ -2132,10 +2132,7 @@ export const PaintApp = () => {
                 />
               </div>
             )}
-                </div>
-              </div>
-            );
-          })()}
+          </div>
         </main>
       </div>
 
