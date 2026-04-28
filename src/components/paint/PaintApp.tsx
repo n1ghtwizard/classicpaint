@@ -242,6 +242,8 @@ export const PaintApp = () => {
   const [textEditor, setTextEditor] = useState<TextEditor | null>(null);
 
   const [presetId, setPresetId] = useState<CanvasPreset["id"]>("fit");
+  // Custom canvas size (e.g. after a crop) — overrides preset sizing.
+  const [customSize, setCustomSize] = useState<{ width: number; height: number } | null>(null);
   const [confirmNew, setConfirmNew] = useState(false);
 
   // Crop state
