@@ -2313,6 +2313,60 @@ export const PaintApp = () => {
               </div>
             )}
           </div>
+          {ctxMenu && (
+            <>
+              <div
+                className="fixed inset-0 z-40"
+                onPointerDown={() => setCtxMenu(null)}
+                onContextMenu={(e) => { e.preventDefault(); setCtxMenu(null); }}
+              />
+              <div
+                role="menu"
+                className="absolute z-50 min-w-[160px] overflow-hidden rounded-md border border-border bg-popover py-1 text-xs text-popover-foreground shadow-md"
+                style={{ left: ctxMenu.x, top: ctxMenu.y }}
+              >
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+                  onClick={async () => { await copyToClipboard(); setCtxMenu(null); }}
+                >
+                  <span>Copy</span><span className="ml-4 text-muted-foreground">⌘C</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+                  disabled={!selection}
+                  onClick={async () => { await cutToClipboard(); setCtxMenu(null); }}
+                >
+                  <span>Cut</span><span className="ml-4 text-muted-foreground">⌘X</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+                  onClick={async () => { await pasteFromClipboard(); setCtxMenu(null); }}
+                >
+                  <span>Paste</span><span className="ml-4 text-muted-foreground">⌘V</span>
+                </button>
+                <div className="my-1 h-px bg-border" />
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => { undo(); setCtxMenu(null); }}
+                  disabled={!canUndo}
+                >
+                  <span>Undo</span><span className="ml-4 text-muted-foreground">⌘Z</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => { redo(); setCtxMenu(null); }}
+                  disabled={!canRedo}
+                >
+                  <span>Redo</span><span className="ml-4 text-muted-foreground">⌘Y</span>
+                </button>
+              </div>
+            </>
+          )}
         </main>
       </div>
 
