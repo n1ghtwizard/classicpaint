@@ -308,9 +308,11 @@ export const PaintApp = () => {
   const toolRef = useRef(tool);
   const colorRef = useRef(color);
   const sizeRef = useRef(size);
+  const zoomRef = useRef(zoom);
   toolRef.current = tool;
   colorRef.current = color;
   sizeRef.current = size;
+  zoomRef.current = zoom;
 
   const getCtx = () => canvasRef.current?.getContext("2d") ?? null;
   const getPreviewCtx = () => previewRef.current?.getContext("2d") ?? null;
