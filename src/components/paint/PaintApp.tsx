@@ -617,7 +617,8 @@ export const PaintApp = () => {
   const getPos = (e: PointerEvent | React.PointerEvent): Point => {
     const canvas = previewRef.current ?? canvasRef.current!;
     const rect = canvas.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    const z = zoomRef.current || 1;
+    return { x: (e.clientX - rect.left) / z, y: (e.clientY - rect.top) / z };
   };
 
   const flushStroke = () => {
