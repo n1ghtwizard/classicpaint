@@ -1361,7 +1361,9 @@ export const PaintApp = () => {
     BRUSHES.find((b) => b.id === tool) ?? BRUSHES.find((b) => b.id === lastBrush) ?? BRUSHES[0];
   const BrushIcon = currentBrush.icon;
   const isBrushActive = BRUSH_TOOLS.includes(tool) || tool === "eraser" || tool === "fill" || tool === "picker";
-  const containerRect = containerRef.current?.getBoundingClientRect();
+  const containerRect = containerRef.current
+    ? { width: containerRef.current.clientWidth, height: containerRef.current.clientHeight }
+    : undefined;
 
   return (
     <div className="flex h-screen w-screen flex-col bg-background text-foreground">
