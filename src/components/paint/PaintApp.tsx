@@ -620,6 +620,16 @@ export const PaintApp = () => {
         redo();
         return;
       }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "c") {
+        e.preventDefault();
+        copyToClipboard();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "x") {
+        e.preventDefault();
+        cutToClipboard();
+        return;
+      }
       if (e.key === "Escape") {
         if (textEditor) setTextEditor(null);
         if (activeShapeRef.current) {
