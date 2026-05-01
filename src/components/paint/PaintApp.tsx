@@ -1198,7 +1198,7 @@ export const PaintApp = () => {
       return;
     }
     if (tool === "text") {
-      setTextEditor({ x: pos.x, y: pos.y, value: "" });
+      setTextEditor({ x: pos.x, y: pos.y, value: "", rotation: 0 });
       return;
     }
     if (tool === "shape") {
