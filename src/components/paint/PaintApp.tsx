@@ -2536,54 +2536,81 @@ export const PaintApp = () => {
                     })()}
                   </div>
                 )}
-                <textarea
-                  ref={textInputRef}
-                  value={textEditor.value}
-                  onChange={(e) =>
-                    setTextEditor({ ...textEditor, value: e.target.value })
-                  }
-                  onBlur={(e) => {
-                    // If focus moved into the toolbar (font/size selectors,
-                    // bold/italic toggles, color picker, etc.), don't commit —
-                    // the user is just adjusting text options. Refocus the
-                    // textarea after the control finishes interacting.
-                    const next = e.relatedTarget as HTMLElement | null;
-                    const toolbar = document.querySelector('[data-text-toolbar="true"]');
-                    if (
-                      next &&
-                      (toolbar?.contains(next) ||
-                        next.closest('[data-text-toolbar="true"]') ||
-                        next.closest('[role="listbox"]') ||
-                        next.closest('[role="dialog"]'))
-                    ) {
-                      // Re-focus shortly after so subsequent typing still works.
-                      setTimeout(() => textInputRef.current?.focus(), 0);
-                      return;
+                <div className="relative inline-block">
+                  <textarea
+                    ref={textInputRef}
+                    value={textEditor.value}
+                    onChange={(e) =>
+                      setTextEditor({ ...textEditor, value: e.target.value })
                     }
-                    commitText();
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      setTextEditor(null);
-                    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                      e.preventDefault();
+                    onBlur={(e) => {
+                      const next = e.relatedTarget as HTMLElement | null;
+                      const toolbar = document.querySelector('[data-text-toolbar="true"]');
+                      if (
+                        next &&
+                        (toolbar?.contains(next) ||
+                          next.closest('[data-text-toolbar="true"]') ||
+                          next.closest('[role="listbox"]') ||
+                          next.closest('[role="dialog"]'))
+                      ) {
+                        setTimeout(() => textInputRef.current?.focus(), 0);
+                        return;
+                      }
                       commitText();
-                    }
-                  }}
-                  rows={1}
-                  placeholder="Type…"
-                  className="min-w-[120px] resize-none overflow-hidden whitespace-pre rounded-sm border border-dashed border-tool-active bg-canvas/80 p-1 leading-tight text-foreground outline-none ring-1 ring-tool-active/30 backdrop-blur-sm"
-                  style={{
-                    color,
-                    fontSize: `${fontSize}px`,
-                    fontFamily,
-                    fontWeight: textBold ? 700 : 400,
-                    fontStyle: textItalic ? "italic" : "normal",
-                    textDecoration: textUnderline ? "underline" : "none",
-                    lineHeight: 1.2,
-                  }}
-                />
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        setTextEditor(null);
+                      } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault();
+                        commitText();
+                      }
+                    }}
+                    rows={1}
+                    placeholder="Type…"
+                    className="min-w-[120px] resize-none overflow-hidden whitespace-pre rounded-sm border border-dashed border-tool-active bg-canvas/80 p-1 leading-tight text-foreground outline-none ring-1 ring-tool-active/30 backdrop-blur-sm"
+                    style={{
+                      color,
+                      fontSize: `${fontSize}px`,
+                      fontFamily,
+                      fontWeight: textBold ? 700 : 400,
+                      fontStyle: textItalic ? "italic" : "normal",
+                      textDecoration: textUnderline ? "underline" : "none",
+                      lineHeight: 1.2,
+                    }}
+                  />
+                  {/* Drag-to-move outline frame: 4 thin strips along the
+                      dashed border so the user can grab the box edge to move
+                      it without an explicit move button. The center remains
+                      clickable for editing text. */}
+                  {(() => {
+                    const startMove = (e: React.PointerEvent) => {
+                      if (e.button !== 0) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      textDragRef.current = {
+                        mode: "move",
+                        startPointer: getPos(e.nativeEvent),
+                        startX: textEditor.x,
+                        startY: textEditor.y,
+                        startRotation: textEditor.rotation,
+                        centerX: 0,
+                        centerY: 0,
+                      };
+                    };
+                    const strip = "absolute cursor-move";
+                    const W = 6; // edge thickness in CSS px
+                    return (
+                      <>
+                        <div data-text-toolbar="true" className={strip} style={{ left: -W, right: -W, top: -W, height: W * 2 }} onPointerDown={startMove} />
+                        <div data-text-toolbar="true" className={strip} style={{ left: -W, right: -W, bottom: -W, height: W * 2 }} onPointerDown={startMove} />
+                        <div data-text-toolbar="true" className={strip} style={{ top: -W, bottom: -W, left: -W, width: W * 2 }} onPointerDown={startMove} />
+                        <div data-text-toolbar="true" className={strip} style={{ top: -W, bottom: -W, right: -W, width: W * 2 }} onPointerDown={startMove} />
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
             )}
               </div>
