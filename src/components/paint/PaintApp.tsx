@@ -1338,10 +1338,19 @@ export const PaintApp = () => {
       return;
     }
 
-    // Any other tool: bake any pending overlays first.
-    if (activeShapeRef.current) commitActiveShape();
-    if (selectionRef.current) commitSelection();
-    if (textEditor) commitText();
+    // Any other tool: bake any pending overlays first. If we did commit
+    // something, treat this click as "place / dismiss only" — don't immediately
+    // start a new shape or text box at the same position.
+    const hadActiveShape = !!activeShapeRef.current;
+    const hadSelection = !!selectionRef.current;
+    const hadTextEditor = !!textEditor;
+    if (hadActiveShape) commitActiveShape();
+    if (hadSelection) commitSelection();
+    if (hadTextEditor) commitText();
+    if (hadActiveShape || hadTextEditor) {
+      // commit* switches tool to "select"; nothing else to do for this click.
+      return;
+    }
 
     if (tool === "fill") {
       floodFill(pos.x, pos.y, color);
