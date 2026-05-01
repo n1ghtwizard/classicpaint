@@ -1559,9 +1559,11 @@ export const PaintApp = () => {
       ctx.restore();
     }
 
-    // Eraser also wipes vector shapes that intersect the cursor.
+    // Eraser: rasterize any vector shapes first so the destination-out brush
+    // can erase them pixel-by-pixel under the cursor (instead of dropping
+    // whole shapes whenever the eraser grazes their bounding box).
     if (tool === "eraser") {
-      eraseShapesAt(pos, size / 2);
+      flattenPlacedShapesToBitmap();
     }
   };
 
