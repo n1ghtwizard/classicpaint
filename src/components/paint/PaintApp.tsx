@@ -779,6 +779,17 @@ export const PaintApp = () => {
         if (e.shiftKey) {
           const step = Math.PI / 12;
           rotation = Math.round(rotation / step) * step;
+        } else {
+          // Auto-snap near cardinal angles within ±4°.
+          const snapTol = (4 * Math.PI) / 180;
+          const cardinals = [-Math.PI, -Math.PI / 2, 0, Math.PI / 2, Math.PI];
+          const norm = Math.atan2(Math.sin(rotation), Math.cos(rotation));
+          for (const c of cardinals) {
+            if (Math.abs(norm - c) < snapTol) {
+              rotation = c;
+              break;
+            }
+          }
         }
         setTextEditor((cur) => (cur ? { ...cur, rotation } : cur));
       }
