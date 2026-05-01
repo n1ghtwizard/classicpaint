@@ -235,6 +235,20 @@ export const PaintApp = () => {
   const historyIndexRef = useRef(-1);
 
   const textInputRef = useRef<HTMLTextAreaElement>(null);
+  // Drag/rotate state for the active text editor box. The handler runs at
+  // window level so dragging keeps working when the pointer leaves a handle.
+  const textDragRef = useRef<
+    | {
+        mode: "move" | "rotate";
+        startPointer: { x: number; y: number };
+        startX: number;
+        startY: number;
+        startRotation: number;
+        centerX: number;
+        centerY: number;
+      }
+    | null
+  >(null);
 
   const [tool, setTool] = useState<Tool>("select");
   const [shapeKind, setShapeKind] = useState<ShapeKind>("rectangle");
