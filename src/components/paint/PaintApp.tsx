@@ -1122,6 +1122,7 @@ export const PaintApp = () => {
       pushHistory();
     }
     setTextEditor(null);
+    setTool("select");
   };
 
   // Lift the pixels under the marquee into a floating selection.
