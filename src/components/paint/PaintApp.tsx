@@ -377,11 +377,19 @@ interface Point {
   y: number;
 }
 
-interface AppClipboard {
-  imageData: ImageData;
-  w: number;
-  h: number;
-}
+type AppClipboard =
+  | { type: "bitmap"; imageData: ImageData; w: number; h: number }
+  | { type: "shape"; shape: DrawnShape }
+  | {
+      type: "text";
+      editor: TextEditor;
+      color: string;
+      fontSize: number;
+      fontFamily: string;
+      bold: boolean;
+      italic: boolean;
+      underline: boolean;
+    };
 
 interface TextEditor {
   x: number;
