@@ -2472,7 +2472,7 @@ export const PaintApp = () => {
                 onChange={setPolylineDraft}
                 onCancel={() => {
                   setPolylineDraft(null);
-                  setTool("pencil");
+                  setTool("select");
                 }}
                 onCommit={commitPolyline}
               />
