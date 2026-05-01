@@ -2464,8 +2464,74 @@ export const PaintApp = () => {
             {textEditor && (
               <div
                 className="absolute z-10"
-                style={{ left: textEditor.x, top: textEditor.y }}
+                style={{
+                  left: textEditor.x,
+                  top: textEditor.y,
+                  transform: `rotate(${textEditor.rotation}rad)`,
+                  transformOrigin: "top left",
+                }}
               >
+                {/* Move handle: drag bar above the textarea */}
+                <div
+                  data-text-toolbar="true"
+                  title="Drag to move"
+                  className="absolute -top-5 left-0 flex h-4 cursor-move items-center justify-center rounded-t-sm border border-b-0 border-dashed border-tool-active bg-tool-active/20 px-2 text-[10px] text-tool-active"
+                  style={{ minWidth: 60 }}
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    textDragRef.current = {
+                      mode: "move",
+                      startPointer: getPos(e),
+                      startX: textEditor.x,
+                      startY: textEditor.y,
+                      startRotation: textEditor.rotation,
+                      centerX: 0,
+                      centerY: 0,
+                    };
+                  }}
+                >
+                  ⋮⋮ move
+                </div>
+                {/* Rotate handle: small circle above the move bar */}
+                <div
+                  data-text-toolbar="true"
+                  title="Drag to rotate"
+                  className="absolute -top-12 left-1/2 h-3 w-3 -translate-x-1/2 cursor-grab rounded-full border border-tool-active bg-canvas shadow-soft"
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // Use the textarea bounding rect to compute the rotation
+                    // center in canvas coords. Approximate the center as the
+                    // editor origin offset by half the textarea size.
+                    const ta = textInputRef.current;
+                    const rect = ta?.getBoundingClientRect();
+                    let cx = textEditor.x;
+                    let cy = textEditor.y;
+                    if (rect) {
+                      // Convert rect center to canvas-local coords using a
+                      // synthetic pointer event at that screen position.
+                      const fake = {
+                        clientX: rect.left + rect.width / 2,
+                        clientY: rect.top + rect.height / 2,
+                      } as PointerEvent;
+                      const c = getPos(fake);
+                      cx = c.x;
+                      cy = c.y;
+                    }
+                    textDragRef.current = {
+                      mode: "rotate",
+                      startPointer: getPos(e),
+                      startX: textEditor.x,
+                      startY: textEditor.y,
+                      startRotation: textEditor.rotation,
+                      centerX: cx,
+                      centerY: cy,
+                    };
+                  }}
+                />
                 <textarea
                   ref={textInputRef}
                   value={textEditor.value}
