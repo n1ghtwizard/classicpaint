@@ -809,6 +809,28 @@ export const PaintApp = () => {
     return true;
   }, [copyToClipboard, clearPreview, textEditor]);
 
+  const deleteCurrent = useCallback(() => {
+    if (textEditor) {
+      setTextEditor(null);
+      toast.success("Deleted");
+      return true;
+    }
+    if (activeShapeRef.current) {
+      setActiveShape(null);
+      clearPreview();
+      toast.success("Deleted");
+      return true;
+    }
+    if (selectionRef.current) {
+      setSelection(null);
+      clearPreview();
+      pushHistory();
+      toast.success("Deleted");
+      return true;
+    }
+    return false;
+  }, [clearPreview, textEditor]);
+
   const placeClipboardAsSelection = useCallback((clip: Extract<AppClipboard, { type: "bitmap" }>) => {
     const canvas = canvasRef.current;
     if (!canvas) return false;
