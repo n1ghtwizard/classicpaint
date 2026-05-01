@@ -883,7 +883,7 @@ export const PaintApp = () => {
 
   const pasteFromClipboard = useCallback(async () => {
     const internal = appClipboardRef.current;
-    if (internal && placeClipboardAsSelection(internal)) {
+    if (internal && pasteInternalClipboard(internal)) {
       toast.success("Pasted");
       return true;
     }
@@ -909,7 +909,7 @@ export const PaintApp = () => {
       toast.error("Clipboard image access is blocked");
       return false;
     }
-  }, [placeBlobAsSelection, placeClipboardAsSelection]);
+  }, [pasteInternalClipboard, placeBlobAsSelection]);
 
   // Keyboard shortcuts
   useEffect(() => {
