@@ -759,6 +759,44 @@ export const PaintApp = () => {
     }
   }, [textEditor]);
 
+  // Window-level pointer listeners that drive moving and rotating the active
+  // text editor box from its on-screen handles.
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const drag = textDragRef.current;
+      if (!drag) return;
+      const p = getPos(e);
+      if (drag.mode === "move") {
+        const dx = p.x - drag.startPointer.x;
+        const dy = p.y - drag.startPointer.y;
+        setTextEditor((cur) =>
+          cur ? { ...cur, x: drag.startX + dx, y: drag.startY + dy } : cur,
+        );
+      } else {
+        const angle = Math.atan2(p.y - drag.centerY, p.x - drag.centerX);
+        // Rotate handle sits above the box (negative Y), so 0 rotation = -PI/2.
+        let rotation = angle + Math.PI / 2;
+        if (e.shiftKey) {
+          const step = Math.PI / 12;
+          rotation = Math.round(rotation / step) * step;
+        }
+        setTextEditor((cur) => (cur ? { ...cur, rotation } : cur));
+      }
+    };
+    const onUp = () => {
+      textDragRef.current = null;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const pushHistory = () => {
     const canvas = canvasRef.current;
     const ctx = getCtx();
