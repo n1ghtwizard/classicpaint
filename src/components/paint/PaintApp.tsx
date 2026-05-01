@@ -1584,6 +1584,8 @@ export const PaintApp = () => {
       ? "cursor-cell"
       : tool === "text"
       ? "cursor-text"
+      : BRUSH_TOOLS.includes(tool) || tool === "eraser"
+      ? "cursor-none"
       : "cursor-crosshair";
 
   const showTextOptions = tool === "text" || textEditor !== null;
