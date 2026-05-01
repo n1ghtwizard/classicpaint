@@ -1443,6 +1443,19 @@ export const PaintApp = () => {
     // Selection tool: clicking outside an existing floating selection commits
     // it and starts a new marquee.
     if (tool === "select") {
+      // If a shape is currently being transformed or a text box is open,
+      // a click on the canvas means "outside" (the overlays stopPropagation
+      // on their own pointer events). Commit and treat this click as a
+      // dismiss only — don't immediately lift another shape or start a
+      // marquee at the same position.
+      if (activeShapeRef.current) {
+        commitActiveShape();
+        return;
+      }
+      if (textEditor) {
+        commitText();
+        return;
+      }
       if (selectionRef.current) {
         const sel = selectionRef.current;
         const inside =
@@ -1453,6 +1466,7 @@ export const PaintApp = () => {
           return;
         }
         commitSelection();
+        return;
       }
       // Single-click on a placed vector shape lifts it into the active-shape
       // slot so the user can drag / resize / rotate it via the transformer
