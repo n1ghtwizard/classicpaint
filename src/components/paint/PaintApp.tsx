@@ -809,7 +809,7 @@ export const PaintApp = () => {
     return true;
   }, [copyToClipboard, clearPreview, textEditor]);
 
-  const placeClipboardAsSelection = useCallback((clip: AppClipboard) => {
+  const placeClipboardAsSelection = useCallback((clip: Extract<AppClipboard, { type: "bitmap" }>) => {
     const canvas = canvasRef.current;
     if (!canvas) return false;
     const ratio = window.devicePixelRatio || 1;
@@ -831,6 +831,26 @@ export const PaintApp = () => {
     setTool("select");
     return true;
   }, [commitActiveShape, commitSelection]);
+
+  const pasteInternalClipboard = useCallback((clip: AppClipboard) => {
+    if (clip.type === "bitmap") return placeClipboardAsSelection(clip);
+    if (selectionRef.current) commitSelection();
+    if (activeShapeRef.current) commitActiveShape();
+    if (clip.type === "shape") {
+      setActiveShape({ ...clip.shape, x: clip.shape.x + 16, y: clip.shape.y + 16 });
+      setTool("select");
+      return true;
+    }
+    setColor(clip.color);
+    setFontSize(clip.fontSize);
+    setFontFamily(clip.fontFamily);
+    setTextBold(clip.bold);
+    setTextItalic(clip.italic);
+    setTextUnderline(clip.underline);
+    setTextEditor({ ...clip.editor, x: clip.editor.x + 16, y: clip.editor.y + 16 });
+    setTool("select");
+    return true;
+  }, [commitActiveShape, commitSelection, placeClipboardAsSelection]);
 
   // Place a PNG blob on the canvas as a draggable floating selection. Shared
   // by the global paste handler and the right-click "Paste" menu item.
@@ -856,7 +876,7 @@ export const PaintApp = () => {
       if (!octx) return;
       octx.drawImage(img, 0, 0, off.width, off.height);
       const data = octx.getImageData(0, 0, off.width, off.height);
-      placeClipboardAsSelection({ imageData: data, w, h });
+      placeClipboardAsSelection({ type: "bitmap", imageData: data, w, h });
     };
     img.src = url;
   }, [placeClipboardAsSelection]);
