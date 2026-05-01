@@ -194,6 +194,7 @@ interface TextEditor {
   x: number;
   y: number;
   value: string;
+  rotation: number;
 }
 
 type CanvasPreset =
