@@ -1224,6 +1224,26 @@ export const PaintApp = () => {
     midPointRef.current = pos;
     pendingPointsRef.current = [];
 
+    // Allocate per-stroke offscreen buffer for translucent brushes so
+    // overlapping segments composite at full opacity, not as visible dots.
+    if (tool === "watercolor") {
+      const main = canvasRef.current;
+      if (main) {
+        const buf = document.createElement("canvas");
+        buf.width = main.width;
+        buf.height = main.height;
+        const bctx = buf.getContext("2d");
+        if (bctx) {
+          const ratio = window.devicePixelRatio || 1;
+          bctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        }
+        strokeBufferRef.current = buf;
+        strokeBufferAlphaRef.current = 0.18;
+      }
+    } else {
+      strokeBufferRef.current = null;
+    }
+
     const ctx = getCtx();
     if (ctx) {
       ctx.save();
