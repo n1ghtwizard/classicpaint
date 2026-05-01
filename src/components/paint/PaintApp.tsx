@@ -1468,6 +1468,11 @@ export const PaintApp = () => {
       }
       ctx.restore();
     }
+
+    // Eraser also wipes vector shapes that intersect the cursor.
+    if (tool === "eraser") {
+      eraseShapesAt(pos, size / 2);
+    }
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
