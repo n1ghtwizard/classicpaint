@@ -1040,6 +1040,12 @@ export const PaintApp = () => {
       ctx.textBaseline = "top";
       const lines = value.split("\n");
       const lineHeight = Math.round(fontSize * 1.2);
+      // Apply rotation around the text editor's origin (top-left).
+      if (textEditor.rotation) {
+        ctx.translate(textEditor.x, textEditor.y);
+        ctx.rotate(textEditor.rotation);
+        ctx.translate(-textEditor.x, -textEditor.y);
+      }
       lines.forEach((line, i) => {
         const ly = textEditor.y + i * lineHeight;
         ctx.fillText(line, textEditor.x, ly);
