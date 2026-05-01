@@ -502,7 +502,7 @@ export const PaintApp = () => {
     }
     setPlacedShapes((prev) => [...prev, shape]);
     setActiveShape(null);
-    setTool("pencil");
+    setTool("select");
   }, []);
 
   // Stamp the floating selection back onto the main canvas at its current
