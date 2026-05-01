@@ -176,6 +176,20 @@ export function ShapeTransformer({ shape, onChange, onCommit }: Props) {
         }}
         title="Drag to rotate"
       />
+
+      {/* Angle readout — visible whenever the shape is rotated or being rotated */}
+      {(dragRef.current?.handle === "rotate" || shape.rotation !== 0) && (
+        <div
+          className="pointer-events-none absolute z-30 rounded-sm border border-border bg-popover px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-popover-foreground shadow-md"
+          style={{
+            left: rotatePos.x,
+            top: rotatePos.y - 18,
+            transform: "translate(-50%, -100%)",
+          }}
+        >
+          {formatAngle(shape.rotation)}
+        </div>
+      )}
     </div>
   );
 }
@@ -186,6 +200,15 @@ function localPos(e: React.PointerEvent | PointerEvent, overlay: HTMLDivElement)
     x: rect.width ? ((e.clientX - rect.left) / rect.width) * overlay.clientWidth : 0,
     y: rect.height ? ((e.clientY - rect.top) / rect.height) * overlay.clientHeight : 0,
   };
+}
+
+function formatAngle(rad: number): string {
+  // Normalize to (-180, 180] for a friendlier readout.
+  let deg = (rad * 180) / Math.PI;
+  deg = ((deg + 180) % 360 + 360) % 360 - 180;
+  // Snap-to-zero on display when extremely close.
+  if (Math.abs(deg) < 0.5) deg = 0;
+  return `${deg.toFixed(0)}°`;
 }
 
 function cursorForHandle(id: keyof typeof HANDLE_OFFSETS, rotation: number): string {
@@ -243,6 +266,19 @@ function applyDrag(
       // Snap to 15° increments
       const step = Math.PI / 12;
       rotation = Math.round(rotation / step) * step;
+    } else {
+      // Auto-snap near cardinal angles (0°, 90°, 180°, 270°) within ±4°
+      // so casual rotation lands cleanly without pixel-perfect dragging.
+      const snapTol = (4 * Math.PI) / 180;
+      const cardinals = [-Math.PI, -Math.PI / 2, 0, Math.PI / 2, Math.PI];
+      // Normalize to [-PI, PI] for comparison
+      const norm = Math.atan2(Math.sin(rotation), Math.cos(rotation));
+      for (const c of cardinals) {
+        if (Math.abs(norm - c) < snapTol) {
+          rotation = c;
+          break;
+        }
+      }
     }
     return { ...startShape, rotation };
   }

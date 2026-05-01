@@ -779,6 +779,17 @@ export const PaintApp = () => {
         if (e.shiftKey) {
           const step = Math.PI / 12;
           rotation = Math.round(rotation / step) * step;
+        } else {
+          // Auto-snap near cardinal angles within ±4°.
+          const snapTol = (4 * Math.PI) / 180;
+          const cardinals = [-Math.PI, -Math.PI / 2, 0, Math.PI / 2, Math.PI];
+          const norm = Math.atan2(Math.sin(rotation), Math.cos(rotation));
+          for (const c of cardinals) {
+            if (Math.abs(norm - c) < snapTol) {
+              rotation = c;
+              break;
+            }
+          }
         }
         setTextEditor((cur) => (cur ? { ...cur, rotation } : cur));
       }
@@ -2381,23 +2392,30 @@ export const PaintApp = () => {
 
             {/* Brush size ring — shows the actual paint diameter for freehand
                 tools and the eraser, in canvas units (scales with zoom). */}
-            {hoverPos && (BRUSH_TOOLS.includes(tool) || tool === "eraser") && (
-              <div
-                className="pointer-events-none absolute z-10"
-                style={{
-                  left: hoverPos.x,
-                  top: hoverPos.y,
-                  width: Math.max(2, size),
-                  height: Math.max(2, size),
-                  transform: "translate(-50%, -50%)",
-                  borderRadius: "9999px",
-                  border: tool === "eraser"
-                    ? "1px solid hsl(var(--foreground))"
-                    : "1px solid hsl(var(--foreground))",
-                  boxShadow: "0 0 0 1px hsl(var(--canvas))",
-                }}
-              />
-            )}
+            {hoverPos && (BRUSH_TOOLS.includes(tool) || tool === "eraser") && (() => {
+              let d = size;
+              if (tool === "pencil") d = Math.max(1, Math.round(size / 3));
+              else if (tool === "marker") d = size * 1.4;
+              else if (tool === "ink") d = Math.max(1, size * 0.7);
+              else if (tool === "watercolor") d = size * 1.2;
+              // brush, calligraphy, crayon, spray, eraser: use size directly.
+              const dim = Math.max(2, d);
+              return (
+                <div
+                  className="pointer-events-none absolute z-10"
+                  style={{
+                    left: hoverPos.x,
+                    top: hoverPos.y,
+                    width: dim,
+                    height: dim,
+                    transform: "translate(-50%, -50%)",
+                    borderRadius: "9999px",
+                    border: "1px solid hsl(var(--foreground))",
+                    boxShadow: "0 0 0 1px hsl(var(--canvas))",
+                  }}
+                />
+              );
+            })()}
 
             {/* Shape transformer overlay — shown only after a shape is drawn,
                 while the user is still adjusting it. */}
@@ -2471,48 +2489,20 @@ export const PaintApp = () => {
                   transformOrigin: "top left",
                 }}
               >
-                {/* Move handle: drag bar above the textarea */}
-                <div
-                  data-text-toolbar="true"
-                  title="Drag to move"
-                  className="absolute -top-5 left-0 flex h-4 cursor-move items-center justify-center rounded-t-sm border border-b-0 border-dashed border-tool-active bg-tool-active/20 px-2 text-[10px] text-tool-active"
-                  style={{ minWidth: 60 }}
-                  onPointerDown={(e) => {
-                    if (e.button !== 0) return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    textDragRef.current = {
-                      mode: "move",
-                      startPointer: getPos(e),
-                      startX: textEditor.x,
-                      startY: textEditor.y,
-                      startRotation: textEditor.rotation,
-                      centerX: 0,
-                      centerY: 0,
-                    };
-                  }}
-                >
-                  ⋮⋮ move
-                </div>
-                {/* Rotate handle: small circle above the move bar */}
+                {/* Rotate handle: small circle above the textarea */}
                 <div
                   data-text-toolbar="true"
                   title="Drag to rotate"
-                  className="absolute -top-12 left-1/2 h-3 w-3 -translate-x-1/2 cursor-grab rounded-full border border-tool-active bg-canvas shadow-soft"
+                  className="absolute -top-7 left-1/2 h-3 w-3 -translate-x-1/2 cursor-grab rounded-full border border-tool-active bg-canvas shadow-soft"
                   onPointerDown={(e) => {
                     if (e.button !== 0) return;
                     e.preventDefault();
                     e.stopPropagation();
-                    // Use the textarea bounding rect to compute the rotation
-                    // center in canvas coords. Approximate the center as the
-                    // editor origin offset by half the textarea size.
                     const ta = textInputRef.current;
                     const rect = ta?.getBoundingClientRect();
                     let cx = textEditor.x;
                     let cy = textEditor.y;
                     if (rect) {
-                      // Convert rect center to canvas-local coords using a
-                      // synthetic pointer event at that screen position.
                       const fake = {
                         clientX: rect.left + rect.width / 2,
                         clientY: rect.top + rect.height / 2,
@@ -2532,54 +2522,95 @@ export const PaintApp = () => {
                     };
                   }}
                 />
-                <textarea
-                  ref={textInputRef}
-                  value={textEditor.value}
-                  onChange={(e) =>
-                    setTextEditor({ ...textEditor, value: e.target.value })
-                  }
-                  onBlur={(e) => {
-                    // If focus moved into the toolbar (font/size selectors,
-                    // bold/italic toggles, color picker, etc.), don't commit —
-                    // the user is just adjusting text options. Refocus the
-                    // textarea after the control finishes interacting.
-                    const next = e.relatedTarget as HTMLElement | null;
-                    const toolbar = document.querySelector('[data-text-toolbar="true"]');
-                    if (
-                      next &&
-                      (toolbar?.contains(next) ||
-                        next.closest('[data-text-toolbar="true"]') ||
-                        next.closest('[role="listbox"]') ||
-                        next.closest('[role="dialog"]'))
-                    ) {
-                      // Re-focus shortly after so subsequent typing still works.
-                      setTimeout(() => textInputRef.current?.focus(), 0);
-                      return;
+
+                {/* Angle readout — visible whenever the box is rotated or being rotated */}
+                {(textDragRef.current?.mode === "rotate" || textEditor.rotation !== 0) && (
+                  <div
+                    className="pointer-events-none absolute -top-14 left-1/2 -translate-x-1/2 rounded-sm border border-border bg-popover px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-popover-foreground shadow-md"
+                  >
+                    {(() => {
+                      let deg = (textEditor.rotation * 180) / Math.PI;
+                      deg = ((deg + 180) % 360 + 360) % 360 - 180;
+                      if (Math.abs(deg) < 0.5) deg = 0;
+                      return `${deg.toFixed(0)}°`;
+                    })()}
+                  </div>
+                )}
+                <div className="relative inline-block">
+                  <textarea
+                    ref={textInputRef}
+                    value={textEditor.value}
+                    onChange={(e) =>
+                      setTextEditor({ ...textEditor, value: e.target.value })
                     }
-                    commitText();
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Escape") {
-                      e.preventDefault();
-                      setTextEditor(null);
-                    } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                      e.preventDefault();
+                    onBlur={(e) => {
+                      const next = e.relatedTarget as HTMLElement | null;
+                      const toolbar = document.querySelector('[data-text-toolbar="true"]');
+                      if (
+                        next &&
+                        (toolbar?.contains(next) ||
+                          next.closest('[data-text-toolbar="true"]') ||
+                          next.closest('[role="listbox"]') ||
+                          next.closest('[role="dialog"]'))
+                      ) {
+                        setTimeout(() => textInputRef.current?.focus(), 0);
+                        return;
+                      }
                       commitText();
-                    }
-                  }}
-                  rows={1}
-                  placeholder="Type…"
-                  className="min-w-[120px] resize-none overflow-hidden whitespace-pre rounded-sm border border-dashed border-tool-active bg-canvas/80 p-1 leading-tight text-foreground outline-none ring-1 ring-tool-active/30 backdrop-blur-sm"
-                  style={{
-                    color,
-                    fontSize: `${fontSize}px`,
-                    fontFamily,
-                    fontWeight: textBold ? 700 : 400,
-                    fontStyle: textItalic ? "italic" : "normal",
-                    textDecoration: textUnderline ? "underline" : "none",
-                    lineHeight: 1.2,
-                  }}
-                />
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Escape") {
+                        e.preventDefault();
+                        setTextEditor(null);
+                      } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                        e.preventDefault();
+                        commitText();
+                      }
+                    }}
+                    rows={1}
+                    placeholder="Type…"
+                    className="min-w-[120px] resize-none overflow-hidden whitespace-pre rounded-sm border border-dashed border-tool-active bg-canvas/80 p-1 leading-tight text-foreground outline-none ring-1 ring-tool-active/30 backdrop-blur-sm"
+                    style={{
+                      color,
+                      fontSize: `${fontSize}px`,
+                      fontFamily,
+                      fontWeight: textBold ? 700 : 400,
+                      fontStyle: textItalic ? "italic" : "normal",
+                      textDecoration: textUnderline ? "underline" : "none",
+                      lineHeight: 1.2,
+                    }}
+                  />
+                  {/* Drag-to-move outline frame: 4 thin strips along the
+                      dashed border so the user can grab the box edge to move
+                      it without an explicit move button. The center remains
+                      clickable for editing text. */}
+                  {(() => {
+                    const startMove = (e: React.PointerEvent) => {
+                      if (e.button !== 0) return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      textDragRef.current = {
+                        mode: "move",
+                        startPointer: getPos(e.nativeEvent),
+                        startX: textEditor.x,
+                        startY: textEditor.y,
+                        startRotation: textEditor.rotation,
+                        centerX: 0,
+                        centerY: 0,
+                      };
+                    };
+                    const strip = "absolute cursor-move";
+                    const W = 6; // edge thickness in CSS px
+                    return (
+                      <>
+                        <div data-text-toolbar="true" className={strip} style={{ left: -W, right: -W, top: -W, height: W * 2 }} onPointerDown={startMove} />
+                        <div data-text-toolbar="true" className={strip} style={{ left: -W, right: -W, bottom: -W, height: W * 2 }} onPointerDown={startMove} />
+                        <div data-text-toolbar="true" className={strip} style={{ top: -W, bottom: -W, left: -W, width: W * 2 }} onPointerDown={startMove} />
+                        <div data-text-toolbar="true" className={strip} style={{ top: -W, bottom: -W, right: -W, width: W * 2 }} onPointerDown={startMove} />
+                      </>
+                    );
+                  })()}
+                </div>
               </div>
             )}
               </div>
