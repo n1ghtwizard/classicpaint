@@ -1275,6 +1275,38 @@ export const PaintApp = () => {
     return -1;
   };
 
+  // Erase any vector shapes whose region overlaps the eraser circle.
+  // Vector shapes live above the raster bitmap, so the destination-out brush
+  // alone wouldn't visibly remove them — we drop them from the shape list.
+  const eraseShapesAt = (pos: Point, radius: number) => {
+    const shapes = placedShapesRef.current;
+    if (shapes.length === 0) return;
+    const survivors: DrawnShape[] = [];
+    let removed = false;
+    for (const s of shapes) {
+      const cx = s.x + s.w / 2;
+      const cy = s.y + s.h / 2;
+      const cos = Math.cos(-s.rotation);
+      const sin = Math.sin(-s.rotation);
+      const dx = pos.x - cx;
+      const dy = pos.y - cy;
+      const lx = dx * cos - dy * sin;
+      const ly = dx * sin + dy * cos;
+      const halfW = s.w / 2 + Math.max(s.strokeWidth / 2, 2);
+      const halfH = s.h / 2 + Math.max(s.strokeWidth / 2, 2);
+      const closestX = Math.max(-halfW, Math.min(halfW, lx));
+      const closestY = Math.max(-halfH, Math.min(halfH, ly));
+      const ddx = lx - closestX;
+      const ddy = ly - closestY;
+      if (ddx * ddx + ddy * ddy <= radius * radius) {
+        removed = true;
+        continue;
+      }
+      survivors.push(s);
+    }
+    if (removed) setPlacedShapes(survivors);
+  };
+
   // Double-click: re-edit the topmost placed shape under the cursor.
   const onCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const pos = getPos(e as unknown as React.PointerEvent);
