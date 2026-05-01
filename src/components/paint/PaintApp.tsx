@@ -731,7 +731,7 @@ export const PaintApp = () => {
   const cloneImageData = (data: ImageData) =>
     new ImageData(new Uint8ClampedArray(data.data), data.width, data.height);
 
-  const clipboardToBlob = async (clip: AppClipboard): Promise<Blob | null> => {
+  const clipboardToBlob = async (clip: Extract<AppClipboard, { type: "bitmap" }>): Promise<Blob | null> => {
     const tmp = document.createElement("canvas");
     tmp.width = clip.imageData.width;
     tmp.height = clip.imageData.height;
@@ -743,6 +743,7 @@ export const PaintApp = () => {
 
   const writeSystemClipboard = async (clip: AppClipboard) => {
     try {
+      if (clip.type !== "bitmap") return false;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const Item = (window as any).ClipboardItem;
       if (!Item || !navigator.clipboard?.write) return false;
@@ -755,15 +756,28 @@ export const PaintApp = () => {
     }
   };
 
-  // Copy the current floating selection, or the flattened canvas if no selection.
+  // Copy the current text box, shape, floating selection, or the flattened canvas.
   // Always stores an internal ClassicPaint clipboard so copy/paste works even when
   // the browser blocks system image clipboard access.
   const copyToClipboard = useCallback(async () => {
     const sel = selectionRef.current;
     let clip: AppClipboard | null = null;
 
-    if (sel) {
-      clip = { imageData: cloneImageData(sel.imageData), w: sel.w, h: sel.h };
+    if (textEditor) {
+      clip = {
+        type: "text",
+        editor: { ...textEditor },
+        color,
+        fontSize,
+        fontFamily,
+        bold: textBold,
+        italic: textItalic,
+        underline: textUnderline,
+      };
+    } else if (activeShapeRef.current) {
+      clip = { type: "shape", shape: { ...activeShapeRef.current } };
+    } else if (sel) {
+      clip = { type: "bitmap", imageData: cloneImageData(sel.imageData), w: sel.w, h: sel.h };
     } else {
       const out = flattenToCanvas();
       const ctx = out?.getContext("2d");
@@ -773,26 +787,27 @@ export const PaintApp = () => {
       }
       const ratio = window.devicePixelRatio || 1;
       const data = ctx.getImageData(0, 0, out.width, out.height);
-      clip = { imageData: data, w: out.width / ratio, h: out.height / ratio };
+      clip = { type: "bitmap", imageData: data, w: out.width / ratio, h: out.height / ratio };
     }
 
     appClipboardRef.current = clip;
     const systemOk = await writeSystemClipboard(clip);
     toast.success(systemOk ? "Copied" : "Copied inside ClassicPaint");
     return true;
-  }, []);
+  }, [color, fontFamily, fontSize, textBold, textEditor, textItalic, textUnderline]);
 
   const cutToClipboard = useCallback(async () => {
-    if (!selectionRef.current) return false;
+    if (!selectionRef.current && !activeShapeRef.current && !textEditor) return false;
     const ok = await copyToClipboard();
     if (!ok) return false;
-    // Drop floating selection without restoring it — that's the "cut".
-    setSelection(null);
+    if (selectionRef.current) setSelection(null);
+    if (activeShapeRef.current) setActiveShape(null);
+    if (textEditor) setTextEditor(null);
     clearPreview();
-    pushHistory();
+    if (selectionRef.current) pushHistory();
     toast.success("Cut");
     return true;
-  }, [copyToClipboard, clearPreview]);
+  }, [copyToClipboard, clearPreview, textEditor]);
 
   const placeClipboardAsSelection = useCallback((clip: AppClipboard) => {
     const canvas = canvasRef.current;
