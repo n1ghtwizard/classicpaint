@@ -1383,36 +1383,18 @@ export const PaintApp = () => {
     return -1;
   };
 
-  // Erase any vector shapes whose region overlaps the eraser circle.
-  // Vector shapes live above the raster bitmap, so the destination-out brush
-  // alone wouldn't visibly remove them — we drop them from the shape list.
-  const eraseShapesAt = (pos: Point, radius: number) => {
+  // Flatten all placed vector shapes into the raster bitmap so the eraser
+  // (which works in destination-out on the bitmap) can chew into them
+  // pixel-by-pixel instead of removing whole shapes at once.
+  const flattenPlacedShapesToBitmap = () => {
     const shapes = placedShapesRef.current;
     if (shapes.length === 0) return;
-    const survivors: DrawnShape[] = [];
-    let removed = false;
-    for (const s of shapes) {
-      const cx = s.x + s.w / 2;
-      const cy = s.y + s.h / 2;
-      const cos = Math.cos(-s.rotation);
-      const sin = Math.sin(-s.rotation);
-      const dx = pos.x - cx;
-      const dy = pos.y - cy;
-      const lx = dx * cos - dy * sin;
-      const ly = dx * sin + dy * cos;
-      const halfW = s.w / 2 + Math.max(s.strokeWidth / 2, 2);
-      const halfH = s.h / 2 + Math.max(s.strokeWidth / 2, 2);
-      const closestX = Math.max(-halfW, Math.min(halfW, lx));
-      const closestY = Math.max(-halfH, Math.min(halfH, ly));
-      const ddx = lx - closestX;
-      const ddy = ly - closestY;
-      if (ddx * ddx + ddy * ddy <= radius * radius) {
-        removed = true;
-        continue;
-      }
-      survivors.push(s);
-    }
-    if (removed) setPlacedShapes(survivors);
+    const ctx = getCtx();
+    if (!ctx) return;
+    ctx.save();
+    for (const s of shapes) renderShape(ctx, s);
+    ctx.restore();
+    setPlacedShapes([]);
   };
 
   // Double-click: re-edit the topmost placed shape under the cursor.
@@ -1467,10 +1449,20 @@ export const PaintApp = () => {
           pos.x >= sel.x && pos.x <= sel.x + sel.w &&
           pos.y >= sel.y && pos.y <= sel.y + sel.h;
         if (inside) {
-          // Drag handled by the SelectionLayer overlay — let it through.
+          // Drag/resize handled by the SelectionLayer overlay — let it through.
           return;
         }
         commitSelection();
+      }
+      // Single-click on a placed vector shape lifts it into the active-shape
+      // slot so the user can drag / resize / rotate it via the transformer
+      // overlay without leaving the select tool.
+      const idx = findShapeAt(pos);
+      if (idx !== -1) {
+        const shape = placedShapesRef.current[idx];
+        setPlacedShapes((prev) => prev.filter((_, i) => i !== idx));
+        setActiveShape(shape);
+        return;
       }
       drawingRef.current = true;
       marqueeRef.current = { startX: pos.x, startY: pos.y };
@@ -1577,9 +1569,11 @@ export const PaintApp = () => {
       ctx.restore();
     }
 
-    // Eraser also wipes vector shapes that intersect the cursor.
+    // Eraser: rasterize any vector shapes first so the destination-out brush
+    // can erase them pixel-by-pixel under the cursor (instead of dropping
+    // whole shapes whenever the eraser grazes their bounding box).
     if (tool === "eraser") {
-      eraseShapesAt(pos, size / 2);
+      flattenPlacedShapesToBitmap();
     }
   };
 
@@ -1599,9 +1593,9 @@ export const PaintApp = () => {
 
     if (!drawingRef.current) return;
 
-    if (tool === "eraser") {
-      eraseShapesAt(getPos(e), size / 2);
-    }
+    // Vector shapes are already flattened on eraser pointerdown; the raster
+    // destination-out brush handles continuous erasing during pointermove.
+
 
     if (tool === "select" && marqueeRef.current) {
       const pos = getPos(e);
