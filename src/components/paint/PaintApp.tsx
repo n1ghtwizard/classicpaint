@@ -2003,7 +2003,7 @@ export const PaintApp = () => {
                 <SelectContent>
                   {FONT_FAMILIES.map((f) => (
                     <SelectItem key={f} value={f} style={{ fontFamily: f }}>
-                      {FONT_LABELS[f] ?? f}
+                      {FONT_LABELS[f] ?? (f.match(/^'([^']+)'/)?.[1] ?? f.split(",")[0])}
                     </SelectItem>
                   ))}
                 </SelectContent>
