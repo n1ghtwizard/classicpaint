@@ -1583,9 +1583,9 @@ export const PaintApp = () => {
 
     if (!drawingRef.current) return;
 
-    if (tool === "eraser") {
-      eraseShapesAt(getPos(e), size / 2);
-    }
+    // Vector shapes are already flattened on eraser pointerdown; the raster
+    // destination-out brush handles continuous erasing during pointermove.
+
 
     if (tool === "select" && marqueeRef.current) {
       const pos = getPos(e);
