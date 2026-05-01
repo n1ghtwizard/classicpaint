@@ -133,12 +133,58 @@ const PRESET_COLORS = [
 ];
 
 const FONT_FAMILIES = [
+  // System / classic
   "Inter, system-ui, sans-serif",
   "Georgia, serif",
   "'Times New Roman', Times, serif",
   "'Courier New', monospace",
   "'Comic Sans MS', cursive",
   "Impact, sans-serif",
+  // Google Fonts — sans-serif
+  "'Roboto', sans-serif",
+  "'Open Sans', sans-serif",
+  "'Lato', sans-serif",
+  "'Montserrat', sans-serif",
+  "'Poppins', sans-serif",
+  "'Oswald', sans-serif",
+  "'Raleway', sans-serif",
+  "'Nunito', sans-serif",
+  "'Quicksand', sans-serif",
+  "'Comfortaa', sans-serif",
+  "'Fredoka', sans-serif",
+  // Serif
+  "'Playfair Display', serif",
+  "'Merriweather', serif",
+  "'Lora', serif",
+  "'PT Serif', serif",
+  "'Source Serif Pro', serif",
+  "'Cormorant Garamond', serif",
+  "'Cinzel', serif",
+  "'Abril Fatface', serif",
+  // Display / decorative
+  "'Bebas Neue', sans-serif",
+  "'Anton', sans-serif",
+  "'Righteous', sans-serif",
+  // Script / handwriting
+  "'Pacifico', cursive",
+  "'Lobster', cursive",
+  "'Dancing Script', cursive",
+  "'Caveat', cursive",
+  "'Satisfy', cursive",
+  "'Great Vibes', cursive",
+  "'Shadows Into Light', cursive",
+  "'Permanent Marker', cursive",
+  "'Indie Flower', cursive",
+  "'Architects Daughter', cursive",
+  "'Special Elite', cursive",
+  // Monospace
+  "'JetBrains Mono', monospace",
+  "'Fira Code', monospace",
+  "'Source Code Pro', monospace",
+  "'Roboto Mono', monospace",
+  // Pixel / retro
+  "'Press Start 2P', cursive",
+  "'VT323', monospace",
 ];
 
 const FONT_LABELS: Record<string, string> = {
@@ -148,6 +194,45 @@ const FONT_LABELS: Record<string, string> = {
   "'Courier New', monospace": "Mono",
   "'Comic Sans MS', cursive": "Comic",
   "Impact, sans-serif": "Impact",
+  "'Roboto', sans-serif": "Roboto",
+  "'Open Sans', sans-serif": "Open Sans",
+  "'Lato', sans-serif": "Lato",
+  "'Montserrat', sans-serif": "Montserrat",
+  "'Poppins', sans-serif": "Poppins",
+  "'Oswald', sans-serif": "Oswald",
+  "'Raleway', sans-serif": "Raleway",
+  "'Nunito', sans-serif": "Nunito",
+  "'Quicksand', sans-serif": "Quicksand",
+  "'Comfortaa', sans-serif": "Comfortaa",
+  "'Fredoka', sans-serif": "Fredoka",
+  "'Playfair Display', serif": "Playfair Display",
+  "'Merriweather', serif": "Merriweather",
+  "'Lora', serif": "Lora",
+  "'PT Serif', serif": "PT Serif",
+  "'Source Serif Pro', serif": "Source Serif Pro",
+  "'Cormorant Garamond', serif": "Cormorant",
+  "'Cinzel', serif": "Cinzel",
+  "'Abril Fatface', serif": "Abril Fatface",
+  "'Bebas Neue', sans-serif": "Bebas Neue",
+  "'Anton', sans-serif": "Anton",
+  "'Righteous', sans-serif": "Righteous",
+  "'Pacifico', cursive": "Pacifico",
+  "'Lobster', cursive": "Lobster",
+  "'Dancing Script', cursive": "Dancing Script",
+  "'Caveat', cursive": "Caveat",
+  "'Satisfy', cursive": "Satisfy",
+  "'Great Vibes', cursive": "Great Vibes",
+  "'Shadows Into Light', cursive": "Shadows Into Light",
+  "'Permanent Marker', cursive": "Permanent Marker",
+  "'Indie Flower', cursive": "Indie Flower",
+  "'Architects Daughter', cursive": "Architects Daughter",
+  "'Special Elite', cursive": "Special Elite",
+  "'JetBrains Mono', monospace": "JetBrains Mono",
+  "'Fira Code', monospace": "Fira Code",
+  "'Source Code Pro', monospace": "Source Code Pro",
+  "'Roboto Mono', monospace": "Roboto Mono",
+  "'Press Start 2P', cursive": "Press Start 2P",
+  "'VT323', monospace": "VT323",
 };
 
 interface ToolBtn {
@@ -502,7 +587,7 @@ export const PaintApp = () => {
     }
     setPlacedShapes((prev) => [...prev, shape]);
     setActiveShape(null);
-    setTool("pencil");
+    setTool("select");
   }, []);
 
   // Stamp the floating selection back onto the main canvas at its current
@@ -1122,6 +1207,7 @@ export const PaintApp = () => {
       pushHistory();
     }
     setTextEditor(null);
+    setTool("select");
   };
 
   // Lift the pixels under the marquee into a floating selection.
@@ -1584,7 +1670,7 @@ export const PaintApp = () => {
       pushHistory();
     }
     setPolylineDraft(null);
-    setTool("pencil");
+    setTool("select");
   };
 
   const loadImageIntoCanvas = (img: HTMLImageElement) => {
@@ -1742,7 +1828,16 @@ export const PaintApp = () => {
             </div>
           )}
           {showTextOptions && (
-            <div className="mr-2 flex items-center gap-2" data-text-toolbar="true">
+            <div
+              className="mr-2 flex items-center gap-2"
+              data-text-toolbar="true"
+              // Keep textarea focus when clicking toolbar controls so Bold /
+              // Italic / Underline / font / size adjustments don't commit
+              // the active text box.
+              onMouseDown={(e) => {
+                if (textEditor) e.preventDefault();
+              }}
+            >
               <Select value={fontFamily} onValueChange={setFontFamily}>
                 <SelectTrigger className="h-8 w-[120px] text-xs">
                   <SelectValue placeholder="Font" />
@@ -2235,7 +2330,7 @@ export const PaintApp = () => {
                 orientation="vertical"
                 value={[size]}
                 min={1}
-                max={48}
+                max={200}
                 step={1}
                 onValueChange={(v) => {
                   setSize(v[0]);
@@ -2246,7 +2341,28 @@ export const PaintApp = () => {
                 aria-label="Brush size"
               />
             </div>
-            <span className="text-[10px] tabular-nums text-muted-foreground">{size}px</span>
+            <div className="flex items-center gap-0.5 text-[10px] tabular-nums text-muted-foreground">
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={size}
+                onChange={(e) => {
+                  const n = Math.max(1, Math.min(500, Number(e.target.value) || 1));
+                  setSize(n);
+                  if (activeShape) {
+                    setActiveShape({ ...activeShape, strokeWidth: n });
+                  }
+                }}
+                onKeyDown={(e) => {
+                  // Let arrow keys nudge the value; blur on Enter to confirm.
+                  if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+                }}
+                className="w-10 rounded-sm border border-border bg-background px-1 py-0.5 text-center text-foreground outline-none focus:border-tool-active focus:ring-1 focus:ring-tool-active/40 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                aria-label="Brush size in pixels"
+              />
+              <span>px</span>
+            </div>
           </div>
         </aside>
 
@@ -2462,7 +2578,7 @@ export const PaintApp = () => {
                 onChange={setPolylineDraft}
                 onCancel={() => {
                   setPolylineDraft(null);
-                  setTool("pencil");
+                  setTool("select");
                 }}
                 onCommit={commitPolyline}
               />
