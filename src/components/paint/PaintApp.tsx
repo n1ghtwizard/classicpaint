@@ -1449,10 +1449,20 @@ export const PaintApp = () => {
           pos.x >= sel.x && pos.x <= sel.x + sel.w &&
           pos.y >= sel.y && pos.y <= sel.y + sel.h;
         if (inside) {
-          // Drag handled by the SelectionLayer overlay — let it through.
+          // Drag/resize handled by the SelectionLayer overlay — let it through.
           return;
         }
         commitSelection();
+      }
+      // Single-click on a placed vector shape lifts it into the active-shape
+      // slot so the user can drag / resize / rotate it via the transformer
+      // overlay without leaving the select tool.
+      const idx = findShapeAt(pos);
+      if (idx !== -1) {
+        const shape = placedShapesRef.current[idx];
+        setPlacedShapes((prev) => prev.filter((_, i) => i !== idx));
+        setActiveShape(shape);
+        return;
       }
       drawingRef.current = true;
       marqueeRef.current = { startX: pos.x, startY: pos.y };
