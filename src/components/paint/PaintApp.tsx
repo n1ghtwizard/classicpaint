@@ -194,6 +194,7 @@ interface TextEditor {
   x: number;
   y: number;
   value: string;
+  rotation: number;
 }
 
 type CanvasPreset =
@@ -234,6 +235,20 @@ export const PaintApp = () => {
   const historyIndexRef = useRef(-1);
 
   const textInputRef = useRef<HTMLTextAreaElement>(null);
+  // Drag/rotate state for the active text editor box. The handler runs at
+  // window level so dragging keeps working when the pointer leaves a handle.
+  const textDragRef = useRef<
+    | {
+        mode: "move" | "rotate";
+        startPointer: { x: number; y: number };
+        startX: number;
+        startY: number;
+        startRotation: number;
+        centerX: number;
+        centerY: number;
+      }
+    | null
+  >(null);
 
   const [tool, setTool] = useState<Tool>("select");
   const [shapeKind, setShapeKind] = useState<ShapeKind>("rectangle");
@@ -744,6 +759,44 @@ export const PaintApp = () => {
     }
   }, [textEditor]);
 
+  // Window-level pointer listeners that drive moving and rotating the active
+  // text editor box from its on-screen handles.
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const drag = textDragRef.current;
+      if (!drag) return;
+      const p = getPos(e);
+      if (drag.mode === "move") {
+        const dx = p.x - drag.startPointer.x;
+        const dy = p.y - drag.startPointer.y;
+        setTextEditor((cur) =>
+          cur ? { ...cur, x: drag.startX + dx, y: drag.startY + dy } : cur,
+        );
+      } else {
+        const angle = Math.atan2(p.y - drag.centerY, p.x - drag.centerX);
+        // Rotate handle sits above the box (negative Y), so 0 rotation = -PI/2.
+        let rotation = angle + Math.PI / 2;
+        if (e.shiftKey) {
+          const step = Math.PI / 12;
+          rotation = Math.round(rotation / step) * step;
+        }
+        setTextEditor((cur) => (cur ? { ...cur, rotation } : cur));
+      }
+    };
+    const onUp = () => {
+      textDragRef.current = null;
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const pushHistory = () => {
     const canvas = canvasRef.current;
     const ctx = getCtx();
@@ -1039,6 +1092,12 @@ export const PaintApp = () => {
       ctx.textBaseline = "top";
       const lines = value.split("\n");
       const lineHeight = Math.round(fontSize * 1.2);
+      // Apply rotation around the text editor's origin (top-left).
+      if (textEditor.rotation) {
+        ctx.translate(textEditor.x, textEditor.y);
+        ctx.rotate(textEditor.rotation);
+        ctx.translate(-textEditor.x, -textEditor.y);
+      }
       lines.forEach((line, i) => {
         const ly = textEditor.y + i * lineHeight;
         ctx.fillText(line, textEditor.x, ly);
@@ -1197,7 +1256,7 @@ export const PaintApp = () => {
       return;
     }
     if (tool === "text") {
-      setTextEditor({ x: pos.x, y: pos.y, value: "" });
+      setTextEditor({ x: pos.x, y: pos.y, value: "", rotation: 0 });
       return;
     }
     if (tool === "shape") {
@@ -1274,8 +1333,14 @@ export const PaintApp = () => {
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    // Always track hover position for ghost cursor in shape/text mode.
-    if (tool === "shape" || tool === "text") {
+    // Track hover position for ghost cursor in shape/text mode and for the
+    // brush-size ring shown over freehand tools.
+    const showsHover =
+      tool === "shape" ||
+      tool === "text" ||
+      BRUSH_TOOLS.includes(tool) ||
+      tool === "eraser";
+    if (showsHover) {
       setHoverPos(getPos(e));
     } else if (hoverPos) {
       setHoverPos(null);
@@ -1571,6 +1636,8 @@ export const PaintApp = () => {
       ? "cursor-cell"
       : tool === "text"
       ? "cursor-text"
+      : BRUSH_TOOLS.includes(tool) || tool === "eraser"
+      ? "cursor-none"
       : "cursor-crosshair";
 
   const showTextOptions = tool === "text" || textEditor !== null;
@@ -2312,6 +2379,26 @@ export const PaintApp = () => {
               </div>
             )}
 
+            {/* Brush size ring — shows the actual paint diameter for freehand
+                tools and the eraser, in canvas units (scales with zoom). */}
+            {hoverPos && (BRUSH_TOOLS.includes(tool) || tool === "eraser") && (
+              <div
+                className="pointer-events-none absolute z-10"
+                style={{
+                  left: hoverPos.x,
+                  top: hoverPos.y,
+                  width: Math.max(2, size),
+                  height: Math.max(2, size),
+                  transform: "translate(-50%, -50%)",
+                  borderRadius: "9999px",
+                  border: tool === "eraser"
+                    ? "1px solid hsl(var(--foreground))"
+                    : "1px solid hsl(var(--foreground))",
+                  boxShadow: "0 0 0 1px hsl(var(--canvas))",
+                }}
+              />
+            )}
+
             {/* Shape transformer overlay — shown only after a shape is drawn,
                 while the user is still adjusting it. */}
             {activeShape && containerRect && (
@@ -2377,8 +2464,74 @@ export const PaintApp = () => {
             {textEditor && (
               <div
                 className="absolute z-10"
-                style={{ left: textEditor.x, top: textEditor.y }}
+                style={{
+                  left: textEditor.x,
+                  top: textEditor.y,
+                  transform: `rotate(${textEditor.rotation}rad)`,
+                  transformOrigin: "top left",
+                }}
               >
+                {/* Move handle: drag bar above the textarea */}
+                <div
+                  data-text-toolbar="true"
+                  title="Drag to move"
+                  className="absolute -top-5 left-0 flex h-4 cursor-move items-center justify-center rounded-t-sm border border-b-0 border-dashed border-tool-active bg-tool-active/20 px-2 text-[10px] text-tool-active"
+                  style={{ minWidth: 60 }}
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    textDragRef.current = {
+                      mode: "move",
+                      startPointer: getPos(e),
+                      startX: textEditor.x,
+                      startY: textEditor.y,
+                      startRotation: textEditor.rotation,
+                      centerX: 0,
+                      centerY: 0,
+                    };
+                  }}
+                >
+                  ⋮⋮ move
+                </div>
+                {/* Rotate handle: small circle above the move bar */}
+                <div
+                  data-text-toolbar="true"
+                  title="Drag to rotate"
+                  className="absolute -top-12 left-1/2 h-3 w-3 -translate-x-1/2 cursor-grab rounded-full border border-tool-active bg-canvas shadow-soft"
+                  onPointerDown={(e) => {
+                    if (e.button !== 0) return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    // Use the textarea bounding rect to compute the rotation
+                    // center in canvas coords. Approximate the center as the
+                    // editor origin offset by half the textarea size.
+                    const ta = textInputRef.current;
+                    const rect = ta?.getBoundingClientRect();
+                    let cx = textEditor.x;
+                    let cy = textEditor.y;
+                    if (rect) {
+                      // Convert rect center to canvas-local coords using a
+                      // synthetic pointer event at that screen position.
+                      const fake = {
+                        clientX: rect.left + rect.width / 2,
+                        clientY: rect.top + rect.height / 2,
+                      } as PointerEvent;
+                      const c = getPos(fake);
+                      cx = c.x;
+                      cy = c.y;
+                    }
+                    textDragRef.current = {
+                      mode: "rotate",
+                      startPointer: getPos(e),
+                      startX: textEditor.x,
+                      startY: textEditor.y,
+                      startRotation: textEditor.rotation,
+                      centerX: cx,
+                      centerY: cy,
+                    };
+                  }}
+                />
                 <textarea
                   ref={textInputRef}
                   value={textEditor.value}
