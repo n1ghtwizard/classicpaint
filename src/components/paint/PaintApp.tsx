@@ -2620,11 +2620,20 @@ export const PaintApp = () => {
               suppressContextMenuRef.current = false;
               return;
             }
+            const pos = getPos(e as unknown as React.PointerEvent);
+            if (!activeShapeRef.current && !selectionRef.current && !textEditor) {
+              const idx = findShapeAt(pos);
+              if (idx !== -1) {
+                const shape = placedShapesRef.current[idx];
+                setPlacedShapes((prev) => prev.filter((_, i) => i !== idx));
+                setActiveShape(shape);
+              }
+            }
             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
             setCtxMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top });
           }}
           onPointerDown={(e) => {
-            if (e.button !== 2) return;
+            if (e.button !== 1) return;
             const main = mainRef.current;
             const surface = containerRef.current;
             if (!main || !surface || !surface.contains(e.target as Node)) return;
@@ -2657,7 +2666,7 @@ export const PaintApp = () => {
             }
           }}
           onPointerUp={(e) => {
-            if (e.button !== 2) return;
+            if (e.button !== 1) return;
             e.preventDefault();
             try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ }
             // Keep panRef.moved through the synthesized contextmenu event so
