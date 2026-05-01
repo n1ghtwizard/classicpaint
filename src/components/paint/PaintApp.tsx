@@ -1664,7 +1664,7 @@ export const PaintApp = () => {
             </div>
           )}
           {showTextOptions && (
-            <div className="mr-2 flex items-center gap-2">
+            <div className="mr-2 flex items-center gap-2" data-text-toolbar="true">
               <Select value={fontFamily} onValueChange={setFontFamily}>
                 <SelectTrigger className="h-8 w-[120px] text-xs">
                   <SelectValue placeholder="Font" />
