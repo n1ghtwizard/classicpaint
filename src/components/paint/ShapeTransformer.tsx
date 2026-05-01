@@ -176,6 +176,20 @@ export function ShapeTransformer({ shape, onChange, onCommit }: Props) {
         }}
         title="Drag to rotate"
       />
+
+      {/* Angle readout — visible whenever the shape is rotated or being rotated */}
+      {(dragRef.current?.handle === "rotate" || shape.rotation !== 0) && (
+        <div
+          className="pointer-events-none absolute z-30 rounded-sm border border-border bg-popover px-1.5 py-0.5 text-[10px] font-medium tabular-nums text-popover-foreground shadow-md"
+          style={{
+            left: rotatePos.x,
+            top: rotatePos.y - 18,
+            transform: "translate(-50%, -100%)",
+          }}
+        >
+          {formatAngle(shape.rotation)}
+        </div>
+      )}
     </div>
   );
 }
