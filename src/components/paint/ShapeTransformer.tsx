@@ -202,6 +202,15 @@ function localPos(e: React.PointerEvent | PointerEvent, overlay: HTMLDivElement)
   };
 }
 
+function formatAngle(rad: number): string {
+  // Normalize to (-180, 180] for a friendlier readout.
+  let deg = (rad * 180) / Math.PI;
+  deg = ((deg + 180) % 360 + 360) % 360 - 180;
+  // Snap-to-zero on display when extremely close.
+  if (Math.abs(deg) < 0.5) deg = 0;
+  return `${deg.toFixed(0)}°`;
+}
+
 function cursorForHandle(id: keyof typeof HANDLE_OFFSETS, rotation: number): string {
   // Rotate the cursor direction by the shape's rotation so the cursor
   // matches the perceived edge orientation.
