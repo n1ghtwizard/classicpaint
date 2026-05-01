@@ -2327,6 +2327,26 @@ export const PaintApp = () => {
               </div>
             )}
 
+            {/* Brush size ring — shows the actual paint diameter for freehand
+                tools and the eraser, in canvas units (scales with zoom). */}
+            {hoverPos && (BRUSH_TOOLS.includes(tool) || tool === "eraser") && (
+              <div
+                className="pointer-events-none absolute z-10"
+                style={{
+                  left: hoverPos.x,
+                  top: hoverPos.y,
+                  width: Math.max(2, size),
+                  height: Math.max(2, size),
+                  transform: "translate(-50%, -50%)",
+                  borderRadius: "9999px",
+                  border: tool === "eraser"
+                    ? "1px solid hsl(var(--foreground))"
+                    : "1px solid hsl(var(--foreground))",
+                  boxShadow: "0 0 0 1px hsl(var(--canvas))",
+                }}
+              />
+            )}
+
             {/* Shape transformer overlay — shown only after a shape is drawn,
                 while the user is still adjusting it. */}
             {activeShape && containerRect && (
