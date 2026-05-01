@@ -1742,7 +1742,16 @@ export const PaintApp = () => {
             </div>
           )}
           {showTextOptions && (
-            <div className="mr-2 flex items-center gap-2" data-text-toolbar="true">
+            <div
+              className="mr-2 flex items-center gap-2"
+              data-text-toolbar="true"
+              // Keep textarea focus when clicking toolbar controls so Bold /
+              // Italic / Underline / font / size adjustments don't commit
+              // the active text box.
+              onMouseDown={(e) => {
+                if (textEditor) e.preventDefault();
+              }}
+            >
               <Select value={fontFamily} onValueChange={setFontFamily}>
                 <SelectTrigger className="h-8 w-[120px] text-xs">
                   <SelectValue placeholder="Font" />
