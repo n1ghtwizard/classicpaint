@@ -2330,7 +2330,7 @@ export const PaintApp = () => {
                 orientation="vertical"
                 value={[size]}
                 min={1}
-                max={48}
+                max={200}
                 step={1}
                 onValueChange={(v) => {
                   setSize(v[0]);
@@ -2341,7 +2341,28 @@ export const PaintApp = () => {
                 aria-label="Brush size"
               />
             </div>
-            <span className="text-[10px] tabular-nums text-muted-foreground">{size}px</span>
+            <div className="flex items-center gap-0.5 text-[10px] tabular-nums text-muted-foreground">
+              <input
+                type="number"
+                min={1}
+                max={500}
+                value={size}
+                onChange={(e) => {
+                  const n = Math.max(1, Math.min(500, Number(e.target.value) || 1));
+                  setSize(n);
+                  if (activeShape) {
+                    setActiveShape({ ...activeShape, strokeWidth: n });
+                  }
+                }}
+                onKeyDown={(e) => {
+                  // Let arrow keys nudge the value; blur on Enter to confirm.
+                  if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+                }}
+                className="w-10 rounded-sm border border-border bg-background px-1 py-0.5 text-center text-foreground outline-none focus:border-tool-active focus:ring-1 focus:ring-tool-active/40 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                aria-label="Brush size in pixels"
+              />
+              <span>px</span>
+            </div>
           </div>
         </aside>
 
