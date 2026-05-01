@@ -1664,7 +1664,7 @@ export const PaintApp = () => {
             </div>
           )}
           {showTextOptions && (
-            <div className="mr-2 flex items-center gap-2">
+            <div className="mr-2 flex items-center gap-2" data-text-toolbar="true">
               <Select value={fontFamily} onValueChange={setFontFamily}>
                 <SelectTrigger className="h-8 w-[120px] text-xs">
                   <SelectValue placeholder="Font" />
@@ -2385,7 +2385,26 @@ export const PaintApp = () => {
                   onChange={(e) =>
                     setTextEditor({ ...textEditor, value: e.target.value })
                   }
-                  onBlur={commitText}
+                  onBlur={(e) => {
+                    // If focus moved into the toolbar (font/size selectors,
+                    // bold/italic toggles, color picker, etc.), don't commit —
+                    // the user is just adjusting text options. Refocus the
+                    // textarea after the control finishes interacting.
+                    const next = e.relatedTarget as HTMLElement | null;
+                    const toolbar = document.querySelector('[data-text-toolbar="true"]');
+                    if (
+                      next &&
+                      (toolbar?.contains(next) ||
+                        next.closest('[data-text-toolbar="true"]') ||
+                        next.closest('[role="listbox"]') ||
+                        next.closest('[role="dialog"]'))
+                    ) {
+                      // Re-focus shortly after so subsequent typing still works.
+                      setTimeout(() => textInputRef.current?.focus(), 0);
+                      return;
+                    }
+                    commitText();
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === "Escape") {
                       e.preventDefault();
