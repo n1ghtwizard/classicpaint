@@ -224,6 +224,11 @@ export const PaintApp = () => {
   const shapeStartRef = useRef<Point | null>(null);
   const pendingPointsRef = useRef<Point[]>([]);
   const rafRef = useRef<number | null>(null);
+  // Per-stroke offscreen buffer for translucent brushes (e.g. watercolor).
+  // Drawn at full opacity, then composited once at low alpha so overlapping
+  // segments don't stack up and produce visible "dots" between flushes.
+  const strokeBufferRef = useRef<HTMLCanvasElement | null>(null);
+  const strokeBufferAlphaRef = useRef<number>(1);
 
   const historyRef = useRef<ImageData[]>([]);
   const historyIndexRef = useRef(-1);
@@ -820,14 +825,24 @@ export const PaintApp = () => {
 
   const flushStroke = () => {
     rafRef.current = null;
-    const ctx = getCtx();
+    const mainCtx = getCtx();
     const points = pendingPointsRef.current;
-    if (!ctx || points.length === 0) return;
+    if (!mainCtx || points.length === 0) return;
     pendingPointsRef.current = [];
 
     const t = toolRef.current;
     const baseSize = sizeRef.current;
     const col = colorRef.current;
+
+    // For translucent brushes we draw onto an offscreen full-opacity buffer
+    // and composite the buffer once per frame, so overlapping segments don't
+    // visibly stack into "dots" along the stroke.
+    const useBuffer = t === "watercolor";
+    let ctx: CanvasRenderingContext2D = mainCtx;
+    if (useBuffer && strokeBufferRef.current) {
+      const bctx = strokeBufferRef.current.getContext("2d");
+      if (bctx) ctx = bctx;
+    }
 
     ctx.save();
     ctx.globalCompositeOperation = t === "eraser" ? "destination-out" : "source-over";
@@ -840,8 +855,6 @@ export const PaintApp = () => {
     let lineWidth = baseSize;
     if (t === "pencil") lineWidth = Math.max(1, Math.round(baseSize / 3));
     if (t === "marker") {
-      // Opaque chunky stroke — translucency caused visible striping where
-      // adjacent quadratic segments overlap between flushes.
       lineWidth = baseSize * 1.4;
       ctx.lineCap = "round";
     }
@@ -850,7 +863,8 @@ export const PaintApp = () => {
     }
     if (t === "watercolor") {
       lineWidth = baseSize * 1.2;
-      ctx.globalAlpha = 0.18;
+      // Buffer is drawn at full opacity; alpha is applied at composite time.
+      strokeBufferAlphaRef.current = 0.18;
     }
     if (t === "calligraphy") {
       lineWidth = baseSize;
@@ -866,7 +880,6 @@ export const PaintApp = () => {
     let mid = midPointRef.current!;
 
     if (t === "spray") {
-      // Spray paint: scatter dots around each incoming point.
       const radius = baseSize;
       const density = Math.max(6, Math.round(baseSize * 1.2));
       for (const p of points) {
@@ -881,7 +894,6 @@ export const PaintApp = () => {
         mid = p;
       }
     } else if (t === "calligraphy") {
-      // Angled nib — draw a short rotated line at each segment.
       const angle = -Math.PI / 4;
       const half = lineWidth / 2;
       for (const p of points) {
@@ -896,7 +908,6 @@ export const PaintApp = () => {
         mid = p;
       }
     } else if (t === "crayon") {
-      // Crayon: jittered multi-stroke for a textured look.
       for (const p of points) {
         const newMid = { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 };
         for (let i = 0; i < 3; i++) {
@@ -911,7 +922,6 @@ export const PaintApp = () => {
         prev = p;
       }
     } else {
-      // Smooth quadratic curve for pencil / brush / marker / ink / watercolor / eraser.
       for (const p of points) {
         const newMid = { x: (prev.x + p.x) / 2, y: (prev.y + p.y) / 2 };
         ctx.beginPath();
@@ -924,6 +934,21 @@ export const PaintApp = () => {
     }
 
     ctx.restore();
+
+    // For buffered brushes, render the live preview by compositing the
+    // full-opacity buffer onto the preview canvas at the target alpha.
+    if (useBuffer && strokeBufferRef.current) {
+      const preview = previewRef.current;
+      const pctx = preview?.getContext("2d");
+      if (preview && pctx) {
+        pctx.save();
+        pctx.setTransform(1, 0, 0, 1, 0, 0);
+        pctx.clearRect(0, 0, preview.width, preview.height);
+        pctx.globalAlpha = strokeBufferAlphaRef.current;
+        pctx.drawImage(strokeBufferRef.current, 0, 0);
+        pctx.restore();
+      }
+    }
 
     lastPointRef.current = prev;
     midPointRef.current = mid;
@@ -1199,6 +1224,26 @@ export const PaintApp = () => {
     midPointRef.current = pos;
     pendingPointsRef.current = [];
 
+    // Allocate per-stroke offscreen buffer for translucent brushes so
+    // overlapping segments composite at full opacity, not as visible dots.
+    if (tool === "watercolor") {
+      const main = canvasRef.current;
+      if (main) {
+        const buf = document.createElement("canvas");
+        buf.width = main.width;
+        buf.height = main.height;
+        const bctx = buf.getContext("2d");
+        if (bctx) {
+          const ratio = window.devicePixelRatio || 1;
+          bctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+        }
+        strokeBufferRef.current = buf;
+        strokeBufferAlphaRef.current = 0.18;
+      }
+    } else {
+      strokeBufferRef.current = null;
+    }
+
     const ctx = getCtx();
     if (ctx) {
       ctx.save();
@@ -1314,6 +1359,20 @@ export const PaintApp = () => {
       rafRef.current = null;
     }
     if (pendingPointsRef.current.length) flushStroke();
+
+    // Commit translucent stroke buffer onto the main canvas at target alpha.
+    if (strokeBufferRef.current) {
+      const main = getCtx();
+      if (main) {
+        main.save();
+        main.setTransform(1, 0, 0, 1, 0, 0);
+        main.globalAlpha = strokeBufferAlphaRef.current;
+        main.drawImage(strokeBufferRef.current, 0, 0);
+        main.restore();
+      }
+      strokeBufferRef.current = null;
+      clearPreview();
+    }
 
     drawingRef.current = false;
     lastPointRef.current = null;
