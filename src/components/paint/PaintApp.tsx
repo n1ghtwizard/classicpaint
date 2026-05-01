@@ -992,6 +992,10 @@ export const PaintApp = () => {
         }
         return;
       }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (deleteCurrent()) e.preventDefault();
+        return;
+      }
       const map: Record<string, Tool> = {
         v: "select", p: "pencil", b: "brush", e: "eraser", f: "fill", i: "picker", t: "text",
       };
@@ -1009,7 +1013,7 @@ export const PaintApp = () => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textEditor, commitActiveShape, commitSelection, clearPreview, copyToClipboard, cutToClipboard, pasteFromClipboard]);
+  }, [textEditor, commitActiveShape, commitSelection, clearPreview, copyToClipboard, cutToClipboard, pasteFromClipboard, deleteCurrent]);
 
   useEffect(() => {
     if (textEditor) {
