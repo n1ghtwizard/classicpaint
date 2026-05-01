@@ -377,11 +377,19 @@ interface Point {
   y: number;
 }
 
-interface AppClipboard {
-  imageData: ImageData;
-  w: number;
-  h: number;
-}
+type AppClipboard =
+  | { type: "bitmap"; imageData: ImageData; w: number; h: number }
+  | { type: "shape"; shape: DrawnShape }
+  | {
+      type: "text";
+      editor: TextEditor;
+      color: string;
+      fontSize: number;
+      fontFamily: string;
+      bold: boolean;
+      italic: boolean;
+      underline: boolean;
+    };
 
 interface TextEditor {
   x: number;
@@ -723,7 +731,7 @@ export const PaintApp = () => {
   const cloneImageData = (data: ImageData) =>
     new ImageData(new Uint8ClampedArray(data.data), data.width, data.height);
 
-  const clipboardToBlob = async (clip: AppClipboard): Promise<Blob | null> => {
+  const clipboardToBlob = async (clip: Extract<AppClipboard, { type: "bitmap" }>): Promise<Blob | null> => {
     const tmp = document.createElement("canvas");
     tmp.width = clip.imageData.width;
     tmp.height = clip.imageData.height;
@@ -735,6 +743,7 @@ export const PaintApp = () => {
 
   const writeSystemClipboard = async (clip: AppClipboard) => {
     try {
+      if (clip.type !== "bitmap") return false;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const Item = (window as any).ClipboardItem;
       if (!Item || !navigator.clipboard?.write) return false;
@@ -747,15 +756,28 @@ export const PaintApp = () => {
     }
   };
 
-  // Copy the current floating selection, or the flattened canvas if no selection.
+  // Copy the current text box, shape, floating selection, or the flattened canvas.
   // Always stores an internal ClassicPaint clipboard so copy/paste works even when
   // the browser blocks system image clipboard access.
   const copyToClipboard = useCallback(async () => {
     const sel = selectionRef.current;
     let clip: AppClipboard | null = null;
 
-    if (sel) {
-      clip = { imageData: cloneImageData(sel.imageData), w: sel.w, h: sel.h };
+    if (textEditor) {
+      clip = {
+        type: "text",
+        editor: { ...textEditor },
+        color,
+        fontSize,
+        fontFamily,
+        bold: textBold,
+        italic: textItalic,
+        underline: textUnderline,
+      };
+    } else if (activeShapeRef.current) {
+      clip = { type: "shape", shape: { ...activeShapeRef.current } };
+    } else if (sel) {
+      clip = { type: "bitmap", imageData: cloneImageData(sel.imageData), w: sel.w, h: sel.h };
     } else {
       const out = flattenToCanvas();
       const ctx = out?.getContext("2d");
@@ -765,28 +787,51 @@ export const PaintApp = () => {
       }
       const ratio = window.devicePixelRatio || 1;
       const data = ctx.getImageData(0, 0, out.width, out.height);
-      clip = { imageData: data, w: out.width / ratio, h: out.height / ratio };
+      clip = { type: "bitmap", imageData: data, w: out.width / ratio, h: out.height / ratio };
     }
 
     appClipboardRef.current = clip;
     const systemOk = await writeSystemClipboard(clip);
     toast.success(systemOk ? "Copied" : "Copied inside ClassicPaint");
     return true;
-  }, []);
+  }, [color, fontFamily, fontSize, textBold, textEditor, textItalic, textUnderline]);
 
   const cutToClipboard = useCallback(async () => {
-    if (!selectionRef.current) return false;
+    if (!selectionRef.current && !activeShapeRef.current && !textEditor) return false;
     const ok = await copyToClipboard();
     if (!ok) return false;
-    // Drop floating selection without restoring it — that's the "cut".
-    setSelection(null);
+    if (selectionRef.current) setSelection(null);
+    if (activeShapeRef.current) setActiveShape(null);
+    if (textEditor) setTextEditor(null);
     clearPreview();
-    pushHistory();
+    if (selectionRef.current) pushHistory();
     toast.success("Cut");
     return true;
-  }, [copyToClipboard, clearPreview]);
+  }, [copyToClipboard, clearPreview, textEditor]);
 
-  const placeClipboardAsSelection = useCallback((clip: AppClipboard) => {
+  const deleteCurrent = useCallback(() => {
+    if (textEditor) {
+      setTextEditor(null);
+      toast.success("Deleted");
+      return true;
+    }
+    if (activeShapeRef.current) {
+      setActiveShape(null);
+      clearPreview();
+      toast.success("Deleted");
+      return true;
+    }
+    if (selectionRef.current) {
+      setSelection(null);
+      clearPreview();
+      pushHistory();
+      toast.success("Deleted");
+      return true;
+    }
+    return false;
+  }, [clearPreview, textEditor]);
+
+  const placeClipboardAsSelection = useCallback((clip: Extract<AppClipboard, { type: "bitmap" }>) => {
     const canvas = canvasRef.current;
     if (!canvas) return false;
     const ratio = window.devicePixelRatio || 1;
@@ -808,6 +853,26 @@ export const PaintApp = () => {
     setTool("select");
     return true;
   }, [commitActiveShape, commitSelection]);
+
+  const pasteInternalClipboard = useCallback((clip: AppClipboard) => {
+    if (clip.type === "bitmap") return placeClipboardAsSelection(clip);
+    if (selectionRef.current) commitSelection();
+    if (activeShapeRef.current) commitActiveShape();
+    if (clip.type === "shape") {
+      setActiveShape({ ...clip.shape, x: clip.shape.x + 16, y: clip.shape.y + 16 });
+      setTool("select");
+      return true;
+    }
+    setColor(clip.color);
+    setFontSize(clip.fontSize);
+    setFontFamily(clip.fontFamily);
+    setTextBold(clip.bold);
+    setTextItalic(clip.italic);
+    setTextUnderline(clip.underline);
+    setTextEditor({ ...clip.editor, x: clip.editor.x + 16, y: clip.editor.y + 16 });
+    setTool("select");
+    return true;
+  }, [commitActiveShape, commitSelection, placeClipboardAsSelection]);
 
   // Place a PNG blob on the canvas as a draggable floating selection. Shared
   // by the global paste handler and the right-click "Paste" menu item.
@@ -833,14 +898,14 @@ export const PaintApp = () => {
       if (!octx) return;
       octx.drawImage(img, 0, 0, off.width, off.height);
       const data = octx.getImageData(0, 0, off.width, off.height);
-      placeClipboardAsSelection({ imageData: data, w, h });
+      placeClipboardAsSelection({ type: "bitmap", imageData: data, w, h });
     };
     img.src = url;
   }, [placeClipboardAsSelection]);
 
   const pasteFromClipboard = useCallback(async () => {
     const internal = appClipboardRef.current;
-    if (internal && placeClipboardAsSelection(internal)) {
+    if (internal && pasteInternalClipboard(internal)) {
       toast.success("Pasted");
       return true;
     }
@@ -866,7 +931,7 @@ export const PaintApp = () => {
       toast.error("Clipboard image access is blocked");
       return false;
     }
-  }, [placeBlobAsSelection, placeClipboardAsSelection]);
+  }, [pasteInternalClipboard, placeBlobAsSelection]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -927,6 +992,10 @@ export const PaintApp = () => {
         }
         return;
       }
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (deleteCurrent()) e.preventDefault();
+        return;
+      }
       const map: Record<string, Tool> = {
         v: "select", p: "pencil", b: "brush", e: "eraser", f: "fill", i: "picker", t: "text",
       };
@@ -944,7 +1013,7 @@ export const PaintApp = () => {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [textEditor, commitActiveShape, commitSelection, clearPreview, copyToClipboard, cutToClipboard, pasteFromClipboard]);
+  }, [textEditor, commitActiveShape, commitSelection, clearPreview, copyToClipboard, cutToClipboard, pasteFromClipboard, deleteCurrent]);
 
   useEffect(() => {
     if (textEditor) {
@@ -2551,11 +2620,20 @@ export const PaintApp = () => {
               suppressContextMenuRef.current = false;
               return;
             }
+            const pos = getPos(e as unknown as React.PointerEvent);
+            if (!activeShapeRef.current && !selectionRef.current && !textEditor) {
+              const idx = findShapeAt(pos);
+              if (idx !== -1) {
+                const shape = placedShapesRef.current[idx];
+                setPlacedShapes((prev) => prev.filter((_, i) => i !== idx));
+                setActiveShape(shape);
+              }
+            }
             const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
             setCtxMenu({ x: e.clientX - rect.left, y: e.clientY - rect.top });
           }}
           onPointerDown={(e) => {
-            if (e.button !== 2) return;
+            if (e.button !== 1) return;
             const main = mainRef.current;
             const surface = containerRef.current;
             if (!main || !surface || !surface.contains(e.target as Node)) return;
@@ -2588,7 +2666,7 @@ export const PaintApp = () => {
             }
           }}
           onPointerUp={(e) => {
-            if (e.button !== 2) return;
+            if (e.button !== 1) return;
             e.preventDefault();
             try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ }
             // Keep panRef.moved through the synthesized contextmenu event so
@@ -2920,10 +2998,18 @@ export const PaintApp = () => {
                 <button
                   type="button"
                   className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
-                  disabled={!selection}
+                  disabled={!selection && !activeShape && !textEditor}
                   onClick={async () => { await cutToClipboard(); setCtxMenu(null); }}
                 >
                   <span>Cut</span><span className="ml-4 text-muted-foreground">⌘X</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+                  disabled={!selection && !activeShape && !textEditor}
+                  onClick={() => { deleteCurrent(); setCtxMenu(null); }}
+                >
+                  <span>Delete</span><span className="ml-4 text-muted-foreground">Del</span>
                 </button>
                 <button
                   type="button"
