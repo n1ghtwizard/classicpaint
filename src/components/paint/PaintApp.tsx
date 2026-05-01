@@ -1585,7 +1585,7 @@ export const PaintApp = () => {
       pushHistory();
     }
     setPolylineDraft(null);
-    setTool("pencil");
+    setTool("select");
   };
 
   const loadImageIntoCanvas = (img: HTMLImageElement) => {
