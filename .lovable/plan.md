@@ -43,7 +43,7 @@ scroll area
 4. Make copy/paste actually reliable
    - Add an internal app clipboard ref that stores copied image data from the current selection or flattened canvas.
    - Copy will always save into the internal clipboard, then also try the system clipboard when the browser allows it.
-   - Paste will first use the internal clipboard, so copy/paste works inside NeoPaint even when the browser blocks image clipboard APIs.
+   - Paste will first use the internal clipboard, so copy/paste works inside ClassicPaint even when the browser blocks image clipboard APIs.
    - Add Ctrl/Cmd+V handling in the keyboard shortcut effect.
    - Keep the existing external image paste support from the browser paste event for screenshots/images copied from outside the app.
    - Add success/error toasts so failures are visible instead of silent.

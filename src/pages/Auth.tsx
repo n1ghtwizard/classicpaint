@@ -19,7 +19,7 @@ export default function Auth() {
   const [displayName, setDisplayName] = useState("");
 
   useEffect(() => {
-    document.title = "Sign in · NeoPaint";
+    document.title = "Sign in · ClassicPaint";
   }, []);
 
   useEffect(() => {
@@ -71,7 +71,7 @@ export default function Auth() {
           <ArrowLeft className="h-3.5 w-3.5" /> Back to canvas
         </Link>
         <div className="rounded-lg border border-border bg-card p-6 shadow-panel">
-          <h1 className="mb-1 text-xl font-semibold">Welcome to NeoPaint</h1>
+          <h1 className="mb-1 text-xl font-semibold">Welcome to ClassicPaint</h1>
           <p className="mb-4 text-sm text-muted-foreground">
             Sign in to save your paintings and color schemes.
           </p>
