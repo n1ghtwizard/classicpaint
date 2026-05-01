@@ -445,7 +445,10 @@ export function renderShape(
   ctx.strokeStyle = shape.color;
   ctx.lineWidth = Math.max(1, shape.strokeWidth);
   ctx.lineCap = "round";
-  ctx.lineJoin = "round";
+  // Sharp corners for polygonal shapes; round for the rounded-rectangle which
+  // already encodes its curves directly in the path.
+  ctx.lineJoin = shape.kind === "rounded-rectangle" ? "round" : "miter";
+  ctx.miterLimit = 10;
 
   if (shape.kind === "line" || shape.kind === "diagonal-line") {
     let a = start;
