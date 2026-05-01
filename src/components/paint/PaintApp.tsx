@@ -224,6 +224,11 @@ export const PaintApp = () => {
   const shapeStartRef = useRef<Point | null>(null);
   const pendingPointsRef = useRef<Point[]>([]);
   const rafRef = useRef<number | null>(null);
+  // Per-stroke offscreen buffer for translucent brushes (e.g. watercolor).
+  // Drawn at full opacity, then composited once at low alpha so overlapping
+  // segments don't stack up and produce visible "dots" between flushes.
+  const strokeBufferRef = useRef<HTMLCanvasElement | null>(null);
+  const strokeBufferAlphaRef = useRef<number>(1);
 
   const historyRef = useRef<ImageData[]>([]);
   const historyIndexRef = useRef(-1);
