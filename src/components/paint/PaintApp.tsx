@@ -1360,6 +1360,20 @@ export const PaintApp = () => {
     }
     if (pendingPointsRef.current.length) flushStroke();
 
+    // Commit translucent stroke buffer onto the main canvas at target alpha.
+    if (strokeBufferRef.current) {
+      const main = getCtx();
+      if (main) {
+        main.save();
+        main.setTransform(1, 0, 0, 1, 0, 0);
+        main.globalAlpha = strokeBufferAlphaRef.current;
+        main.drawImage(strokeBufferRef.current, 0, 0);
+        main.restore();
+      }
+      strokeBufferRef.current = null;
+      clearPreview();
+    }
+
     drawingRef.current = false;
     lastPointRef.current = null;
     midPointRef.current = null;
