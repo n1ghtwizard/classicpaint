@@ -1281,8 +1281,14 @@ export const PaintApp = () => {
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    // Always track hover position for ghost cursor in shape/text mode.
-    if (tool === "shape" || tool === "text") {
+    // Track hover position for ghost cursor in shape/text mode and for the
+    // brush-size ring shown over freehand tools.
+    const showsHover =
+      tool === "shape" ||
+      tool === "text" ||
+      BRUSH_TOOLS.includes(tool) ||
+      tool === "eraser";
+    if (showsHover) {
       setHoverPos(getPos(e));
     } else if (hoverPos) {
       setHoverPos(null);
