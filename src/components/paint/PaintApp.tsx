@@ -3132,6 +3132,19 @@ export const PaintApp = () => {
         </div>
 
         <div className="ml-auto flex items-center gap-3 text-xs text-muted-foreground">
+          {(() => {
+            const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent || "");
+            const mod = isMac ? "⌘" : "Ctrl";
+            return (
+              <span className="hidden lg:flex items-center gap-2 rounded-md border border-border bg-muted/40 px-2 py-1 font-mono text-[11px]">
+                <span><kbd className="font-sans">{mod}</kbd>+<kbd className="font-sans">X</kbd> Cut</span>
+                <span className="opacity-40">·</span>
+                <span><kbd className="font-sans">{mod}</kbd>+<kbd className="font-sans">C</kbd> Copy</span>
+                <span className="opacity-40">·</span>
+                <span><kbd className="font-sans">{mod}</kbd>+<kbd className="font-sans">V</kbd> Paste</span>
+              </span>
+            );
+          })()}
           {activeShape && (
             <span className="hidden md:inline">
               Drag handles to resize · top dot rotates · Enter to confirm · Esc to cancel
