@@ -2998,10 +2998,18 @@ export const PaintApp = () => {
                 <button
                   type="button"
                   className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
-                  disabled={!selection}
+                  disabled={!selection && !activeShape && !textEditor}
                   onClick={async () => { await cutToClipboard(); setCtxMenu(null); }}
                 >
                   <span>Cut</span><span className="ml-4 text-muted-foreground">⌘X</span>
+                </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-between px-3 py-1.5 text-left hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
+                  disabled={!selection && !activeShape && !textEditor}
+                  onClick={() => { deleteCurrent(); setCtxMenu(null); }}
+                >
+                  <span>Delete</span><span className="ml-4 text-muted-foreground">Del</span>
                 </button>
                 <button
                   type="button"
