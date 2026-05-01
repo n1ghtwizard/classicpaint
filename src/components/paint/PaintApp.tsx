@@ -185,6 +185,114 @@ const FONT_FAMILIES = [
   // Pixel / retro
   "'Press Start 2P', cursive",
   "'VT323', monospace",
+  "'Silkscreen', cursive",
+  "'Pixelify Sans', sans-serif",
+  "'DotGothic16', sans-serif",
+  "'Jersey 10', sans-serif",
+  "'Rampart One', sans-serif",
+  // Extra sans-serif
+  "'Work Sans', sans-serif",
+  "'Rubik', sans-serif",
+  "'Mulish', sans-serif",
+  "'DM Sans', sans-serif",
+  "'Manrope', sans-serif",
+  "'Karla', sans-serif",
+  "'Barlow', sans-serif",
+  "'Asap', sans-serif",
+  "'Hind', sans-serif",
+  "'Heebo', sans-serif",
+  "'Mukta', sans-serif",
+  "'PT Sans', sans-serif",
+  "'Cabin', sans-serif",
+  "'Titillium Web', sans-serif",
+  "'Exo 2', sans-serif",
+  "'Josefin Sans', sans-serif",
+  "'Noto Sans', sans-serif",
+  "'Sansita', sans-serif",
+  // Extra serif
+  "'Bitter', serif",
+  "'Crimson Text', serif",
+  "'Crimson Pro', serif",
+  "'Cardo', serif",
+  "'Libre Baskerville', serif",
+  "'Spectral', serif",
+  "'EB Garamond', serif",
+  "'Old Standard TT', serif",
+  "'Vollkorn', serif",
+  "'Arvo', serif",
+  "'Slabo 27px', serif",
+  "'Roboto Slab', serif",
+  "'Zilla Slab', serif",
+  "'Alfa Slab One', serif",
+  "'Domine', serif",
+  "'Noto Serif', serif",
+  // Extra display / decorative
+  "'Russo One', sans-serif",
+  "'Black Ops One', sans-serif",
+  "'Bungee', sans-serif",
+  "'Monoton', sans-serif",
+  "'Audiowide', sans-serif",
+  "'Orbitron', sans-serif",
+  "'Stick No Bills', sans-serif",
+  "'Bowlby One', sans-serif",
+  "'Bangers', cursive",
+  "'Fugaz One', sans-serif",
+  "'Cinzel Decorative', serif",
+  "'UnifrakturMaguntia', cursive",
+  "'MedievalSharp', cursive",
+  "'Pirata One', cursive",
+  "'Concert One', sans-serif",
+  "'Ultra', serif",
+  "'Faster One', sans-serif",
+  "'Rye', serif",
+  "'Berkshire Swash', serif",
+  "'Henny Penny', cursive",
+  // Spooky / themed display
+  "'Creepster', cursive",
+  "'Nosifer', cursive",
+  "'Eater', cursive",
+  "'Butcherman', cursive",
+  "'Frijole', cursive",
+  "'Mountains of Christmas', cursive",
+  // Extra script / handwriting
+  "'Kalam', cursive",
+  "'Sacramento', cursive",
+  "'Allura', cursive",
+  "'Yellowtail', cursive",
+  "'Parisienne', cursive",
+  "'Tangerine', cursive",
+  "'Italianno', cursive",
+  "'Cookie', cursive",
+  "'Marck Script', cursive",
+  "'Homemade Apple', cursive",
+  "'Reenie Beanie', cursive",
+  "'Gloria Hallelujah', cursive",
+  "'Patrick Hand', cursive",
+  "'Amatic SC', cursive",
+  "'Courgette', cursive",
+  "'Kaushan Script', cursive",
+  "'Sail', cursive",
+  "'Stalemate', cursive",
+  "'Cedarville Cursive', cursive",
+  "'Coming Soon', cursive",
+  "'Just Another Hand', cursive",
+  "'Nanum Pen Script', cursive",
+  "'Caveat Brush', cursive",
+  "'Mali', cursive",
+  "'Neucha', cursive",
+  "'Schoolbell', cursive",
+  "'Walter Turncoat', cursive",
+  "'Annie Use Your Telescope', cursive",
+  "'Rock Salt', cursive",
+  "'Underdog', cursive",
+  // Extra monospace
+  "'IBM Plex Mono', monospace",
+  "'Space Mono', monospace",
+  "'Inconsolata', monospace",
+  "'Cousine', monospace",
+  "'Major Mono Display', monospace",
+  "'Share Tech Mono', monospace",
+  "'B612 Mono', monospace",
 ];
 
 const FONT_LABELS: Record<string, string> = {
@@ -1275,6 +1383,38 @@ export const PaintApp = () => {
     return -1;
   };
 
+  // Erase any vector shapes whose region overlaps the eraser circle.
+  // Vector shapes live above the raster bitmap, so the destination-out brush
+  // alone wouldn't visibly remove them — we drop them from the shape list.
+  const eraseShapesAt = (pos: Point, radius: number) => {
+    const shapes = placedShapesRef.current;
+    if (shapes.length === 0) return;
+    const survivors: DrawnShape[] = [];
+    let removed = false;
+    for (const s of shapes) {
+      const cx = s.x + s.w / 2;
+      const cy = s.y + s.h / 2;
+      const cos = Math.cos(-s.rotation);
+      const sin = Math.sin(-s.rotation);
+      const dx = pos.x - cx;
+      const dy = pos.y - cy;
+      const lx = dx * cos - dy * sin;
+      const ly = dx * sin + dy * cos;
+      const halfW = s.w / 2 + Math.max(s.strokeWidth / 2, 2);
+      const halfH = s.h / 2 + Math.max(s.strokeWidth / 2, 2);
+      const closestX = Math.max(-halfW, Math.min(halfW, lx));
+      const closestY = Math.max(-halfH, Math.min(halfH, ly));
+      const ddx = lx - closestX;
+      const ddy = ly - closestY;
+      if (ddx * ddx + ddy * ddy <= radius * radius) {
+        removed = true;
+        continue;
+      }
+      survivors.push(s);
+    }
+    if (removed) setPlacedShapes(survivors);
+  };
+
   // Double-click: re-edit the topmost placed shape under the cursor.
   const onCanvasDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const pos = getPos(e as unknown as React.PointerEvent);
@@ -1338,10 +1478,19 @@ export const PaintApp = () => {
       return;
     }
 
-    // Any other tool: bake any pending overlays first.
-    if (activeShapeRef.current) commitActiveShape();
-    if (selectionRef.current) commitSelection();
-    if (textEditor) commitText();
+    // Any other tool: bake any pending overlays first. If we did commit
+    // something, treat this click as "place / dismiss only" — don't immediately
+    // start a new shape or text box at the same position.
+    const hadActiveShape = !!activeShapeRef.current;
+    const hadSelection = !!selectionRef.current;
+    const hadTextEditor = !!textEditor;
+    if (hadActiveShape) commitActiveShape();
+    if (hadSelection) commitSelection();
+    if (hadTextEditor) commitText();
+    if (hadActiveShape || hadTextEditor) {
+      // commit* switches tool to "select"; nothing else to do for this click.
+      return;
+    }
 
     if (tool === "fill") {
       floodFill(pos.x, pos.y, color);
@@ -1427,6 +1576,11 @@ export const PaintApp = () => {
       }
       ctx.restore();
     }
+
+    // Eraser also wipes vector shapes that intersect the cursor.
+    if (tool === "eraser") {
+      eraseShapesAt(pos, size / 2);
+    }
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1444,6 +1598,10 @@ export const PaintApp = () => {
     }
 
     if (!drawingRef.current) return;
+
+    if (tool === "eraser") {
+      eraseShapesAt(getPos(e), size / 2);
+    }
 
     if (tool === "select" && marqueeRef.current) {
       const pos = getPos(e);
@@ -1845,7 +2003,7 @@ export const PaintApp = () => {
                 <SelectContent>
                   {FONT_FAMILIES.map((f) => (
                     <SelectItem key={f} value={f} style={{ fontFamily: f }}>
-                      {FONT_LABELS[f] ?? f}
+                      {FONT_LABELS[f] ?? (f.match(/^'([^']+)'/)?.[1] ?? f.split(",")[0])}
                     </SelectItem>
                   ))}
                 </SelectContent>
