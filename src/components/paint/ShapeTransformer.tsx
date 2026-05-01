@@ -243,6 +243,19 @@ function applyDrag(
       // Snap to 15° increments
       const step = Math.PI / 12;
       rotation = Math.round(rotation / step) * step;
+    } else {
+      // Auto-snap near cardinal angles (0°, 90°, 180°, 270°) within ±4°
+      // so casual rotation lands cleanly without pixel-perfect dragging.
+      const snapTol = (4 * Math.PI) / 180;
+      const cardinals = [-Math.PI, -Math.PI / 2, 0, Math.PI / 2, Math.PI];
+      // Normalize to [-PI, PI] for comparison
+      const norm = Math.atan2(Math.sin(rotation), Math.cos(rotation));
+      for (const c of cardinals) {
+        if (Math.abs(norm - c) < snapTol) {
+          rotation = c;
+          break;
+        }
+      }
     }
     return { ...startShape, rotation };
   }
