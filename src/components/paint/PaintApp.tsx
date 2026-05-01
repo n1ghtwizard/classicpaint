@@ -904,33 +904,57 @@ export const PaintApp = () => {
   }, [placeClipboardAsSelection]);
 
   const pasteFromClipboard = useCallback(async () => {
+    // Try system clipboard FIRST so external image copies (e.g. from another app
+    // or browser tab) take priority over a stale internal clipboard.
+    try {
+      if (navigator.clipboard?.read) {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          const imageType = item.types.find((t) => t.startsWith("image/"));
+          if (imageType) {
+            const blob = await item.getType(imageType);
+            placeBlobAsSelection(blob);
+            toast.success("Pasted");
+            return true;
+          }
+        }
+        // Some browsers expose images via text/html with an <img src="..."> tag
+        const htmlItem = items.find((it) => it.types.includes("text/html"));
+        if (htmlItem) {
+          const htmlBlob = await htmlItem.getType("text/html");
+          const html = await htmlBlob.text();
+          const match = html.match(/<img[^>]+src=["']([^"']+)["']/i);
+          if (match) {
+            try {
+              const res = await fetch(match[1]);
+              const blob = await res.blob();
+              if (blob.type.startsWith("image/")) {
+                placeBlobAsSelection(blob);
+                toast.success("Pasted");
+                return true;
+              }
+            } catch {
+              /* fall through */
+            }
+          }
+        }
+      }
+    } catch {
+      // Permission denied or unsupported — fall back to internal clipboard
+    }
+
     const internal = appClipboardRef.current;
     if (internal && pasteInternalClipboard(internal)) {
       toast.success("Pasted");
       return true;
     }
 
-    try {
-      if (!navigator.clipboard?.read) {
-        toast.error("Clipboard image access is blocked");
-        return false;
-      }
-      const items = await navigator.clipboard.read();
-      for (const item of items) {
-        const type = item.types.find((t) => t.startsWith("image/"));
-        if (type) {
-          const blob = await item.getType(type);
-          placeBlobAsSelection(blob);
-          toast.success("Pasted");
-          return true;
-        }
-      }
+    if (!navigator.clipboard?.read) {
+      toast.error("Use ⌘V / Ctrl+V to paste images from outside the app");
+    } else {
       toast.error("No image found on clipboard");
-      return false;
-    } catch {
-      toast.error("Clipboard image access is blocked");
-      return false;
     }
+    return false;
   }, [pasteInternalClipboard, placeBlobAsSelection]);
 
   // Keyboard shortcuts
