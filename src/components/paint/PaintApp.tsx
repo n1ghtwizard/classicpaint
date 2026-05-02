@@ -550,6 +550,27 @@ export const PaintApp = () => {
   const getCtx = () => canvasRef.current?.getContext("2d") ?? null;
   const getPreviewCtx = () => previewRef.current?.getContext("2d") ?? null;
 
+  // Measure a single line of text using a detached 2D context, so the
+  // textarea can size itself to fit the rendered glyph width exactly.
+  const measureTextWidth = (
+    line: string,
+    px: number,
+    family: string,
+    bold: boolean,
+    italic: boolean,
+  ): number => {
+    if (!line) return 0;
+    const c = getCtx();
+    if (!c) return line.length * px * 0.6;
+    c.save();
+    const weight = bold ? "bold" : "normal";
+    const style = italic ? "italic" : "normal";
+    c.font = `${style} ${weight} ${px}px ${family}`;
+    const w = c.measureText(line).width;
+    c.restore();
+    return w;
+  };
+
   const clearPreview = useCallback(() => {
     const preview = previewRef.current;
     const ctx = getPreviewCtx();
@@ -2951,9 +2972,9 @@ export const PaintApp = () => {
                         commitText();
                       }
                     }}
-                    rows={1}
+                    rows={Math.max(1, textEditor.value.split("\n").length)}
                     placeholder="Type…"
-                    className="min-w-[120px] resize-none overflow-hidden whitespace-pre rounded-sm border border-dashed border-tool-active bg-canvas/80 p-1 leading-tight text-foreground outline-none ring-1 ring-tool-active/30 backdrop-blur-sm"
+                    className="resize-none whitespace-pre rounded-sm border border-dashed border-tool-active bg-canvas/80 leading-tight text-foreground outline-none ring-1 ring-tool-active/30 backdrop-blur-sm"
                     style={{
                       color,
                       fontSize: `${fontSize}px`,
@@ -2962,6 +2983,24 @@ export const PaintApp = () => {
                       fontStyle: textItalic ? "italic" : "normal",
                       textDecoration: textUnderline ? "underline" : "none",
                       lineHeight: 1.2,
+                      // Zero padding/border-offset so the on-screen text starts
+                      // exactly at (textEditor.x, textEditor.y) — matching what
+                      // commitText() draws to the canvas. Any padding here would
+                      // make the rendered text appear shifted relative to where
+                      // the user was typing.
+                      padding: 0,
+                      margin: 0,
+                      border: "1px dashed hsl(var(--tool-active))",
+                      // Compensate for the 1px border so text glyphs themselves
+                      // sit exactly on textEditor.x/y, not 1px inside.
+                      marginLeft: -1,
+                      marginTop: -1,
+                      // Auto-size: width grows with the longest line so the
+                      // textarea never horizontally scrolls (which would hide
+                      // characters and make the committed text appear shifted).
+                      width: `${Math.max(40, ...textEditor.value.split("\n").map((l) => measureTextWidth(l, fontSize, fontFamily, textBold, textItalic))) + 8}px`,
+                      minWidth: 40,
+                      overflow: "hidden",
                     }}
                   />
                   {/* Drag-to-move outline frame: 4 thin strips along the
