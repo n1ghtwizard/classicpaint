@@ -462,6 +462,8 @@ export const PaintApp = () => {
   const [size, setSize] = useState(6);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [historyLen, setHistoryLen] = useState(0);
+  const [historyIdx, setHistoryIdx] = useState(-1);
 
   const [fontSize, setFontSize] = useState(24);
   const [fontFamily, setFontFamily] = useState(FONT_FAMILIES[0]);
@@ -1115,6 +1117,13 @@ export const PaintApp = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const syncHistoryState = () => {
+    setHistoryLen(historyRef.current.length);
+    setHistoryIdx(historyIndexRef.current);
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+  };
+
   const pushHistory = () => {
     const canvas = canvasRef.current;
     const ctx = getCtx();
@@ -1124,8 +1133,7 @@ export const PaintApp = () => {
     historyRef.current.push(data);
     if (historyRef.current.length > 40) historyRef.current.shift();
     historyIndexRef.current = historyRef.current.length - 1;
-    setCanUndo(historyIndexRef.current > 0);
-    setCanRedo(false);
+    syncHistoryState();
   };
 
   const restoreFromHistory = () => {
@@ -1134,8 +1142,7 @@ export const PaintApp = () => {
     const data = historyRef.current[historyIndexRef.current];
     if (!canvas || !ctx || !data) return;
     if (data.width !== canvas.width || data.height !== canvas.height) {
-      setCanUndo(historyIndexRef.current > 0);
-      setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+      syncHistoryState();
       return;
     }
     const ratio = window.devicePixelRatio || 1;
@@ -1144,8 +1151,7 @@ export const PaintApp = () => {
     ctx.putImageData(data, 0, 0);
     ctx.restore();
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    setCanUndo(historyIndexRef.current > 0);
-    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+    syncHistoryState();
   };
 
   const undo = () => {
@@ -1181,6 +1187,16 @@ export const PaintApp = () => {
   const redo = () => {
     if (historyIndexRef.current >= historyRef.current.length - 1) return;
     historyIndexRef.current += 1;
+    restoreFromHistory();
+  };
+
+  const jumpToHistory = (idx: number) => {
+    const clamped = Math.max(0, Math.min(historyRef.current.length - 1, Math.round(idx)));
+    if (clamped === historyIndexRef.current) return;
+    // Cancel any in-progress shape/selection so the jump is unambiguous.
+    if (activeShapeRef.current) { setActiveShape(null); clearPreview(); }
+    if (selectionRef.current) { setSelection(null); clearPreview(); }
+    historyIndexRef.current = clamped;
     restoreFromHistory();
   };
 
@@ -2190,6 +2206,29 @@ export const PaintApp = () => {
               </Button>
             </TooltipTrigger>
             <TooltipContent>Redo (⌘Y / ⌘⇧Z)</TooltipContent>
+          </Tooltip>
+          <div className="mx-2 h-5 w-px bg-border" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-2 px-1">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">History</span>
+                <div className="w-40">
+                  <Slider
+                    value={[historyLen > 0 ? historyIdx : 0]}
+                    min={0}
+                    max={Math.max(0, historyLen - 1)}
+                    step={1}
+                    disabled={historyLen <= 1}
+                    onValueChange={(v) => jumpToHistory(v[0] ?? 0)}
+                    aria-label="History"
+                  />
+                </div>
+                <span className="w-10 text-right font-mono text-[10px] tabular-nums text-muted-foreground">
+                  {historyLen > 0 ? `${historyIdx + 1}/${historyLen}` : "0/0"}
+                </span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>Drag to scrub through history</TooltipContent>
           </Tooltip>
           <div className="mx-2 h-5 w-px bg-border" />
           <Tooltip>
