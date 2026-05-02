@@ -2211,6 +2211,29 @@ export const PaintApp = () => {
           <Tooltip>
             <TooltipTrigger asChild>
               <div className="flex items-center gap-2 px-1">
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground">History</span>
+                <div className="w-40">
+                  <Slider
+                    value={[historyLen > 0 ? historyIdx : 0]}
+                    min={0}
+                    max={Math.max(0, historyLen - 1)}
+                    step={1}
+                    disabled={historyLen <= 1}
+                    onValueChange={(v) => jumpToHistory(v[0] ?? 0)}
+                    aria-label="History"
+                  />
+                </div>
+                <span className="w-10 text-right font-mono text-[10px] tabular-nums text-muted-foreground">
+                  {historyLen > 0 ? `${historyIdx + 1}/${historyLen}` : "0/0"}
+                </span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>Drag to scrub through history</TooltipContent>
+          </Tooltip>
+          <div className="mx-2 h-5 w-px bg-border" />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex items-center gap-2 px-1">
                 <ZoomOut className="h-3.5 w-3.5 text-muted-foreground" />
                 <div className="w-32">
                   <Slider
