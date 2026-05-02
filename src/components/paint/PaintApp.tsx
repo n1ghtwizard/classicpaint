@@ -550,6 +550,27 @@ export const PaintApp = () => {
   const getCtx = () => canvasRef.current?.getContext("2d") ?? null;
   const getPreviewCtx = () => previewRef.current?.getContext("2d") ?? null;
 
+  // Measure a single line of text using a detached 2D context, so the
+  // textarea can size itself to fit the rendered glyph width exactly.
+  const measureTextWidth = (
+    line: string,
+    px: number,
+    family: string,
+    bold: boolean,
+    italic: boolean,
+  ): number => {
+    if (!line) return 0;
+    const c = getCtx();
+    if (!c) return line.length * px * 0.6;
+    c.save();
+    const weight = bold ? "bold" : "normal";
+    const style = italic ? "italic" : "normal";
+    c.font = `${style} ${weight} ${px}px ${family}`;
+    const w = c.measureText(line).width;
+    c.restore();
+    return w;
+  };
+
   const clearPreview = useCallback(() => {
     const preview = previewRef.current;
     const ctx = getPreviewCtx();
