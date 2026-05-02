@@ -462,6 +462,8 @@ export const PaintApp = () => {
   const [size, setSize] = useState(6);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
+  const [historyLen, setHistoryLen] = useState(0);
+  const [historyIdx, setHistoryIdx] = useState(-1);
 
   const [fontSize, setFontSize] = useState(24);
   const [fontFamily, setFontFamily] = useState(FONT_FAMILIES[0]);
