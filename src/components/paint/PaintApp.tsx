@@ -1117,6 +1117,13 @@ export const PaintApp = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const syncHistoryState = () => {
+    setHistoryLen(historyRef.current.length);
+    setHistoryIdx(historyIndexRef.current);
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+  };
+
   const pushHistory = () => {
     const canvas = canvasRef.current;
     const ctx = getCtx();
@@ -1126,8 +1133,7 @@ export const PaintApp = () => {
     historyRef.current.push(data);
     if (historyRef.current.length > 40) historyRef.current.shift();
     historyIndexRef.current = historyRef.current.length - 1;
-    setCanUndo(historyIndexRef.current > 0);
-    setCanRedo(false);
+    syncHistoryState();
   };
 
   const restoreFromHistory = () => {
@@ -1136,8 +1142,7 @@ export const PaintApp = () => {
     const data = historyRef.current[historyIndexRef.current];
     if (!canvas || !ctx || !data) return;
     if (data.width !== canvas.width || data.height !== canvas.height) {
-      setCanUndo(historyIndexRef.current > 0);
-      setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+      syncHistoryState();
       return;
     }
     const ratio = window.devicePixelRatio || 1;
@@ -1146,8 +1151,7 @@ export const PaintApp = () => {
     ctx.putImageData(data, 0, 0);
     ctx.restore();
     ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-    setCanUndo(historyIndexRef.current > 0);
-    setCanRedo(historyIndexRef.current < historyRef.current.length - 1);
+    syncHistoryState();
   };
 
   const undo = () => {
@@ -1183,6 +1187,16 @@ export const PaintApp = () => {
   const redo = () => {
     if (historyIndexRef.current >= historyRef.current.length - 1) return;
     historyIndexRef.current += 1;
+    restoreFromHistory();
+  };
+
+  const jumpToHistory = (idx: number) => {
+    const clamped = Math.max(0, Math.min(historyRef.current.length - 1, Math.round(idx)));
+    if (clamped === historyIndexRef.current) return;
+    // Cancel any in-progress shape/selection so the jump is unambiguous.
+    if (activeShapeRef.current) { setActiveShape(null); clearPreview(); }
+    if (selectionRef.current) { setSelection(null); clearPreview(); }
+    historyIndexRef.current = clamped;
     restoreFromHistory();
   };
 
