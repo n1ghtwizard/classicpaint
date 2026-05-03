@@ -269,21 +269,25 @@ const buildPath = (kind: ShapeKind, w: number, h: number): Path2D | null => {
       p.ellipse(w * 0.12, h * 0.96, w * 0.045, h * 0.035, 0, 0, Math.PI * 2);
       return p;
     case "moon": {
-      // Crescent = outer circle with an offset circle (same radius) carved out.
-      // Two circles of radius R, centers separated by d on the x-axis.
+      // Crescent = outer disc minus an offset disc of the same radius.
+      // Both circles have radius R; inner is offset to the right by d.
+      // Their intersections lie at x = ox + d/2, y = cy ± hh.
       const R = Math.min(w, h) * 0.5;
-      const d = R * 0.7; // gap between centers (smaller d = thicker crescent)
+      const d = R * 0.6; // smaller d => thicker crescent
       const cy = h / 2;
-      // Place so the whole crescent fits inside the bounding box
-      const ox = w / 2 - (d / 2) * 0.2; // outer center
-      const ix = ox + d;                 // inner (carving) center
+      const ox = w / 2 - d / 2; // outer center (so crescent is roughly centered)
+      const ix = ox + d;        // inner (carving) center
       const hh = Math.sqrt(R * R - (d * d) / 4);
-      const alpha = Math.atan2(hh, d / 2); // half-angle of intersection on outer circle
-      // Outer arc: from top intersection, sweep through the LEFT side to bottom intersection.
-      // Start angle = alpha (at +y / bottom intersection)... we go P2 -> left -> P1.
-      p.arc(ox, cy, R, alpha, 2 * Math.PI - alpha, false);
-      // Inner arc: continue from P1 back to P2 through the LEFT side of the inner circle.
-      p.arc(ix, cy, R, alpha - Math.PI, Math.PI - alpha, false);
+      const alpha = Math.atan2(hh, d / 2); // half-angle on outer circle
+      // Outer arc: from upper intersection, go counter-clockwise (canvas:
+      // anticlockwise=true) through the LEFT side, to the lower intersection.
+      // Start angle -alpha (top intersection), end angle +alpha, anticlockwise.
+      p.arc(ox, cy, R, -alpha, alpha, true);
+      // Inner arc: from lower intersection back to upper, traveling through the
+      // LEFT side of the inner circle (which is INSIDE the outer disc → carves).
+      // On the inner circle: bottom intersection is at angle (π - alpha),
+      // top intersection at -(π - alpha). anticlockwise=true sweeps through π.
+      p.arc(ix, cy, R, Math.PI - alpha, -(Math.PI - alpha), true);
       p.closePath();
       return p;
     }
