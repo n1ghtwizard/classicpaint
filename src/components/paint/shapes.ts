@@ -118,7 +118,7 @@ export const SHAPES: ShapeMeta[] = [
   { id: "cross", label: "Cross", icon: Plus },
   { id: "pie", label: "Pie", icon: PieChart },
   { id: "chord", label: "Chord", icon: PieChart },
-  { id: "banner", label: "Banner", icon: Flag },
+  { id: "banner", label: "Flag", icon: Flag },
 ];
 
 export const SHAPE_LOOKUP: Record<ShapeKind, ShapeMeta> = SHAPES.reduce(
