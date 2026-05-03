@@ -36,6 +36,7 @@ export type ShapeKind =
   | "rectangle"
   | "rounded-rectangle"
   | "ellipse"
+  | "circle"
   | "line"
   | "diagonal-line"
   | "triangle"
@@ -84,6 +85,7 @@ export const SHAPES: ShapeMeta[] = [
   { id: "rectangle", label: "Rectangle", icon: Square },
   { id: "rounded-rectangle", label: "Rounded rectangle", icon: Square },
   { id: "ellipse", label: "Ellipse", icon: Circle },
+  { id: "circle", label: "Circle", icon: Circle },
   { id: "triangle", label: "Triangle", icon: Triangle },
   { id: "right-triangle", label: "Right triangle", icon: Triangle },
   { id: "diamond", label: "Diamond", icon: Diamond },
@@ -173,6 +175,11 @@ const buildPath = (kind: ShapeKind, w: number, h: number): Path2D | null => {
     case "ellipse":
       p.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
       return p;
+    case "circle": {
+      const r = Math.min(w, h) / 2;
+      p.arc(w / 2, h / 2, r, 0, Math.PI * 2);
+      return p;
+    }
     case "triangle":
       move(0.5, 0); line(1, 1); line(0, 1); p.closePath(); return p;
     case "right-triangle":
