@@ -269,22 +269,21 @@ const buildPath = (kind: ShapeKind, w: number, h: number): Path2D | null => {
       p.ellipse(w * 0.12, h * 0.96, w * 0.045, h * 0.035, 0, 0, Math.PI * 2);
       return p;
     case "moon": {
-      // Crescent = big circle minus an offset circle of the same radius
-      const R = Math.min(w, h) * 0.48;
-      const d = R * 0.7; // offset between the two centers
-      const cx = w / 2 - d / 2 + R * 0.05;
+      // Crescent = outer circle with an offset circle (same radius) carved out.
+      // Two circles of radius R, centers separated by d on the x-axis.
+      const R = Math.min(w, h) * 0.5;
+      const d = R * 0.7; // gap between centers (smaller d = thicker crescent)
       const cy = h / 2;
-      const xo = cx;       // outer center
-      const xi = cx + d;   // inner (carving) center
-      const ay = Math.sqrt(R * R - (d * d) / 4);
-      const topAngleOuter = Math.atan2(-ay, d / 2);
-      const botAngleOuter = Math.atan2(ay, d / 2);
-      const topAngleInner = Math.atan2(-ay, -d / 2);
-      const botAngleInner = Math.atan2(ay, -d / 2);
-      // Outer arc: top intersection -> around the left -> bottom intersection (counter-clockwise)
-      p.arc(xo, cy, R, topAngleOuter, botAngleOuter, true);
-      // Inner arc carves back: bottom -> top through the right (clockwise on inner circle)
-      p.arc(xi, cy, R, botAngleInner, topAngleInner, true);
+      // Place so the whole crescent fits inside the bounding box
+      const ox = w / 2 - (d / 2) * 0.2; // outer center
+      const ix = ox + d;                 // inner (carving) center
+      const hh = Math.sqrt(R * R - (d * d) / 4);
+      const alpha = Math.atan2(hh, d / 2); // half-angle of intersection on outer circle
+      // Outer arc: from top intersection, sweep through the LEFT side to bottom intersection.
+      // Start angle = alpha (at +y / bottom intersection)... we go P2 -> left -> P1.
+      p.arc(ox, cy, R, alpha, 2 * Math.PI - alpha, false);
+      // Inner arc: continue from P1 back to P2 through the LEFT side of the inner circle.
+      p.arc(ix, cy, R, alpha - Math.PI, Math.PI - alpha, false);
       p.closePath();
       return p;
     }
