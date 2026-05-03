@@ -269,17 +269,22 @@ const buildPath = (kind: ShapeKind, w: number, h: number): Path2D | null => {
       p.ellipse(w * 0.12, h * 0.96, w * 0.045, h * 0.035, 0, 0, Math.PI * 2);
       return p;
     case "moon": {
-      // Crescent built from an outer half-circle + an inner offset arc that carves it
+      // Crescent = big circle minus an offset circle of the same radius
       const R = Math.min(w, h) * 0.48;
-      const cx = w * 0.5;
-      const cy = h * 0.5;
-      const offset = R * 0.55;
-      const r = Math.sqrt(offset * offset + R * R);
-      const a = Math.atan2(R, -offset);
-      // Outer left half (counter-clockwise from top to bottom through the left)
-      p.arc(cx - offset * 0.15, cy, R, -Math.PI / 2, Math.PI / 2, true);
-      // Inner arc carves the right side, sweeping clockwise through the left of the inner circle
-      p.arc(cx + offset * 0.85, cy, r, a, 2 * Math.PI - a, false);
+      const d = R * 0.7; // offset between the two centers
+      const cx = w / 2 - d / 2 + R * 0.05;
+      const cy = h / 2;
+      const xo = cx;       // outer center
+      const xi = cx + d;   // inner (carving) center
+      const ay = Math.sqrt(R * R - (d * d) / 4);
+      const topAngleOuter = Math.atan2(-ay, d / 2);
+      const botAngleOuter = Math.atan2(ay, d / 2);
+      const topAngleInner = Math.atan2(-ay, -d / 2);
+      const botAngleInner = Math.atan2(ay, -d / 2);
+      // Outer arc: top intersection -> around the left -> bottom intersection (counter-clockwise)
+      p.arc(xo, cy, R, topAngleOuter, botAngleOuter, true);
+      // Inner arc carves back: bottom -> top through the right (clockwise on inner circle)
+      p.arc(xi, cy, R, botAngleInner, topAngleInner, true);
       p.closePath();
       return p;
     }
