@@ -36,6 +36,7 @@ export type ShapeKind =
   | "rectangle"
   | "rounded-rectangle"
   | "ellipse"
+  | "circle"
   | "line"
   | "diagonal-line"
   | "triangle"
@@ -84,6 +85,7 @@ export const SHAPES: ShapeMeta[] = [
   { id: "rectangle", label: "Rectangle", icon: Square },
   { id: "rounded-rectangle", label: "Rounded rectangle", icon: Square },
   { id: "ellipse", label: "Ellipse", icon: Circle },
+  { id: "circle", label: "Circle", icon: Circle },
   { id: "triangle", label: "Triangle", icon: Triangle },
   { id: "right-triangle", label: "Right triangle", icon: Triangle },
   { id: "diamond", label: "Diamond", icon: Diamond },
@@ -116,7 +118,7 @@ export const SHAPES: ShapeMeta[] = [
   { id: "cross", label: "Cross", icon: Plus },
   { id: "pie", label: "Pie", icon: PieChart },
   { id: "chord", label: "Chord", icon: PieChart },
-  { id: "banner", label: "Banner", icon: Flag },
+  { id: "banner", label: "Flag", icon: Flag },
 ];
 
 export const SHAPE_LOOKUP: Record<ShapeKind, ShapeMeta> = SHAPES.reduce(
@@ -173,6 +175,11 @@ const buildPath = (kind: ShapeKind, w: number, h: number): Path2D | null => {
     case "ellipse":
       p.ellipse(w / 2, h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
       return p;
+    case "circle": {
+      const r = Math.min(w, h) / 2;
+      p.arc(w / 2, h / 2, r, 0, Math.PI * 2);
+      return p;
+    }
     case "triangle":
       move(0.5, 0); line(1, 1); line(0, 1); p.closePath(); return p;
     case "right-triangle":
@@ -261,11 +268,18 @@ const buildPath = (kind: ShapeKind, w: number, h: number): Path2D | null => {
       p.moveTo(w * 0.16, h * 0.96);
       p.ellipse(w * 0.12, h * 0.96, w * 0.045, h * 0.035, 0, 0, Math.PI * 2);
       return p;
-    case "moon":
-      p.arc(w * 0.4, h * 0.5, Math.min(w, h) * 0.45, Math.PI * 0.5, Math.PI * 1.5, false);
-      p.arc(w * 0.55, h * 0.5, Math.min(w, h) * 0.4, Math.PI * 1.5, Math.PI * 0.5, true);
+    case "moon": {
+      const cx = w / 2, cy = h / 2;
+      const rOuter = Math.min(w, h) * 0.48;
+      const rInner = Math.min(w, h) * 0.42;
+      const offset = Math.min(w, h) * 0.18;
+      // Outer arc (right half of moon disk)
+      p.arc(cx - offset * 0.3, cy, rOuter, -Math.PI / 2, Math.PI / 2, false);
+      // Inner arc carves the crescent (going back, clockwise)
+      p.arc(cx + offset, cy, rInner, Math.PI / 2, -Math.PI / 2, true);
       p.closePath();
       return p;
+    }
     case "sun": {
       const cx = w / 2, cy = h / 2;
       const radius = Math.min(w, h) / 2;
@@ -319,14 +333,19 @@ const buildPath = (kind: ShapeKind, w: number, h: number): Path2D | null => {
       return p;
     }
     case "banner": {
-      const top = 0.25;
-      const bot = 0.75;
-      const notch = 0.08;
-      move(0, top); line(0.15, top); line(0.15, top - 0.1);
-      line(0.85, top - 0.1); line(0.85, top); line(1, top);
-      line(1 - notch, 0.5); line(1, bot); line(0.85, bot);
-      line(0.85, bot + 0.1); line(0.15, bot + 0.1); line(0.15, bot);
-      line(0, bot); line(notch, 0.5);
+      // Flag on a pole: thin vertical pole on the left, waving flag on top
+      const poleW = 0.06;
+      // Pole rectangle
+      p.moveTo(0, 0);
+      p.lineTo(poleW, 0);
+      p.lineTo(poleW, 1);
+      p.lineTo(0, 1);
+      p.closePath();
+      // Flag (waving) attached near the top
+      p.moveTo(poleW, 0.05);
+      p.lineTo(1, 0.05);
+      p.bezierCurveTo(0.85, 0.25, 1, 0.4, 0.85, 0.55);
+      p.lineTo(poleW, 0.55);
       p.closePath();
       return p;
     }
