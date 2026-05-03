@@ -269,14 +269,17 @@ const buildPath = (kind: ShapeKind, w: number, h: number): Path2D | null => {
       p.ellipse(w * 0.12, h * 0.96, w * 0.045, h * 0.035, 0, 0, Math.PI * 2);
       return p;
     case "moon": {
-      const cx = w / 2, cy = h / 2;
-      const rOuter = Math.min(w, h) * 0.48;
-      const rInner = Math.min(w, h) * 0.42;
-      const offset = Math.min(w, h) * 0.18;
-      // Outer arc (right half of moon disk)
-      p.arc(cx - offset * 0.3, cy, rOuter, -Math.PI / 2, Math.PI / 2, false);
-      // Inner arc carves the crescent (going back, clockwise)
-      p.arc(cx + offset, cy, rInner, Math.PI / 2, -Math.PI / 2, true);
+      // Crescent built from an outer half-circle + an inner offset arc that carves it
+      const R = Math.min(w, h) * 0.48;
+      const cx = w * 0.5;
+      const cy = h * 0.5;
+      const offset = R * 0.55;
+      const r = Math.sqrt(offset * offset + R * R);
+      const a = Math.atan2(R, -offset);
+      // Outer left half (counter-clockwise from top to bottom through the left)
+      p.arc(cx - offset * 0.15, cy, R, -Math.PI / 2, Math.PI / 2, true);
+      // Inner arc carves the right side, sweeping clockwise through the left of the inner circle
+      p.arc(cx + offset * 0.85, cy, r, a, 2 * Math.PI - a, false);
       p.closePath();
       return p;
     }
@@ -333,19 +336,19 @@ const buildPath = (kind: ShapeKind, w: number, h: number): Path2D | null => {
       return p;
     }
     case "banner": {
-      // Flag on a pole: thin vertical pole on the left, waving flag on top
-      const poleW = 0.06;
-      // Pole rectangle
+      // Flag on a pole, filling the full bounding box
+      const poleW = w * 0.08;
+      // Pole spanning full height
       p.moveTo(0, 0);
       p.lineTo(poleW, 0);
-      p.lineTo(poleW, 1);
-      p.lineTo(0, 1);
+      p.lineTo(poleW, h);
+      p.lineTo(0, h);
       p.closePath();
-      // Flag (waving) attached near the top
-      p.moveTo(poleW, 0.05);
-      p.lineTo(1, 0.05);
-      p.bezierCurveTo(0.85, 0.25, 1, 0.4, 0.85, 0.55);
-      p.lineTo(poleW, 0.55);
+      // Waving flag attached to top portion of the pole
+      p.moveTo(poleW, 0);
+      p.lineTo(w, 0);
+      p.bezierCurveTo(w * 0.82, h * 0.18, w, h * 0.36, w * 0.85, h * 0.55);
+      p.lineTo(poleW, h * 0.55);
       p.closePath();
       return p;
     }
